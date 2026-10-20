@@ -4,16 +4,23 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+from api.dependencies import get_current_user
 from api.main import Application
 from api.settings import _Settings
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable, OrbitCalculationError
 from models.pydantic import CalculationResult, CoordinateRequest, RequestValidationErrorResponse
 
 
+def authorized_application(*, settings: _Settings) -> Application:
+    app = Application(settings=settings)
+    app.dependency_overrides[get_current_user] = lambda: None
+    return app
+
+
 async def test_point_limit_is_checked_before_submitting_work(
     monkeypatch: pytest.MonkeyPatch, omm_request: CoordinateRequest
 ) -> None:
-    app = Application(settings=_Settings(APP_COMPUTE_MAX_POINTS=60))
+    app = authorized_application(settings=_Settings(APP_COMPUTE_MAX_POINTS=60))
     calculate = AsyncMock()
     monkeypatch.setattr(app.services.compute, "calculate", calculate)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -35,7 +42,7 @@ async def test_point_limit_is_checked_before_submitting_work(
 async def test_error_response_contract(
     monkeypatch: pytest.MonkeyPatch, omm_request: CoordinateRequest, error: Exception, code: str, status_code: int
 ) -> None:
-    app = Application(settings=_Settings())
+    app = authorized_application(settings=_Settings())
     monkeypatch.setattr(app.services.compute, "calculate", AsyncMock(side_effect=error))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/api/v1/orbits/coordinates", json=omm_request.model_dump(mode="json"))
@@ -46,7 +53,7 @@ async def test_error_response_contract(
 async def test_worker_json_is_sent_as_json_without_encoding_it_twice(
     monkeypatch: pytest.MonkeyPatch, omm_request: CoordinateRequest
 ) -> None:
-    app = Application(settings=_Settings())
+    app = authorized_application(settings=_Settings())
     # Full numerical response validation is covered by real process integration tests.
     result = CalculationResult(payload=b'{"point_count":1}', point_count=1, duration_sec=0.01)
     monkeypatch.setattr(app.services.compute, "calculate", AsyncMock(return_value=result))
@@ -57,7 +64,7 @@ async def test_worker_json_is_sent_as_json_without_encoding_it_twice(
 
 
 async def test_openapi_documents_both_validation_and_calculation_errors(omm_request: CoordinateRequest) -> None:
-    app = Application(settings=_Settings())
+    app = authorized_application(settings=_Settings())
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         fields = {**omm_request.model_dump(mode="json"), "step_seconds": 0}
         response = await client.post("/api/v1/orbits/coordinates", json=fields)
@@ -73,7 +80,7 @@ async def test_openapi_documents_both_validation_and_calculation_errors(omm_requ
 async def test_openapi_examples_match_documented_requests(
     request: pytest.FixtureRequest, name: str, fixture_name: str
 ) -> None:
-    app = Application(settings=_Settings())
+    app = authorized_application(settings=_Settings())
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         schema = (await client.get("/openapi.json")).json()
     content = schema["paths"]["/api/v1/orbits/coordinates"]["post"]["requestBody"]["content"]["application/json"]
@@ -83,7 +90,7 @@ async def test_openapi_examples_match_documented_requests(
 
 @pytest.mark.parametrize("value", ["1e999", "-1e999", "NaN", "Infinity"])
 async def test_non_finite_input_returns_validation_error(omm_request: CoordinateRequest, value: str) -> None:
-    app = Application(settings=_Settings())
+    app = authorized_application(settings=_Settings())
     fields = omm_request.model_dump(mode="json")
     fields["orbit"]["elements"]["BSTAR"] = "REPLACE_NUMBER"
     content = json.dumps(fields).replace('"REPLACE_NUMBER"', value)

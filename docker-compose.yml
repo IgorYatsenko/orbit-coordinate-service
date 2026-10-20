@@ -12,6 +12,7 @@ x-app-environment: &app-environment
   APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
   APP_DOCS_ENABLED: ${APP_DOCS_ENABLED:-true}
   APP_HTTP_WORKERS: ${APP_HTTP_WORKERS:-1}
+  APP_HTTP_TRUSTED_PROXY_IPS: ${APP_HTTP_TRUSTED_PROXY_IPS:-}
   APP_HTTP_KEEP_ALIVE_SEC: ${APP_HTTP_KEEP_ALIVE_SEC:-5}
   APP_SHUTDOWN_TIMEOUT_SEC: ${APP_SHUTDOWN_TIMEOUT_SEC:-15}
   APP_DB_HOST: postgres
@@ -25,6 +26,27 @@ x-app-environment: &app-environment
   APP_DB_CONNECT_TIMEOUT_SEC: ${APP_DB_CONNECT_TIMEOUT_SEC:-5}
   APP_DB_STATEMENT_TIMEOUT_SEC: ${APP_DB_STATEMENT_TIMEOUT_SEC:-5}
   APP_DB_HEALTHCHECK_TIMEOUT_SEC: ${APP_DB_HEALTHCHECK_TIMEOUT_SEC:-2}
+  APP_AUTH_TOKEN_SECRET: ${APP_AUTH_TOKEN_SECRET:?Run ./scripts/start-local.sh --init-only to generate .env}
+  APP_AUTH_TOKEN_TTL_SEC: ${APP_AUTH_TOKEN_TTL_SEC:-900}
+  APP_AUTH_TOKEN_ISSUER: ${APP_AUTH_TOKEN_ISSUER:-orbit-coordinate-service}
+  APP_AUTH_TOKEN_AUDIENCE: ${APP_AUTH_TOKEN_AUDIENCE:-orbit-api}
+  APP_AUTH_PASSWORD_WORKERS: ${APP_AUTH_PASSWORD_WORKERS:-2}
+  APP_AUTH_PASSWORD_MEMORY_KIB: ${APP_AUTH_PASSWORD_MEMORY_KIB:-65536}
+  APP_AUTH_PASSWORD_TIME_COST: ${APP_AUTH_PASSWORD_TIME_COST:-3}
+  APP_AUTH_PASSWORD_PARALLELISM: ${APP_AUTH_PASSWORD_PARALLELISM:-2}
+  APP_REDIS_HOST: redis
+  APP_REDIS_PORT: 6379
+  APP_REDIS_DB: ${APP_REDIS_DB:-0}
+  APP_REDIS_PASSWORD: ${APP_REDIS_PASSWORD:-orbits_redis}
+  APP_REDIS_KEY_PREFIX: ${APP_REDIS_KEY_PREFIX:-orbits}
+  APP_REDIS_MAX_CONNECTIONS: ${APP_REDIS_MAX_CONNECTIONS:-20}
+  APP_REDIS_CONNECT_TIMEOUT_SEC: ${APP_REDIS_CONNECT_TIMEOUT_SEC:-2}
+  APP_REDIS_SOCKET_TIMEOUT_SEC: ${APP_REDIS_SOCKET_TIMEOUT_SEC:-2}
+  APP_REDIS_HEALTHCHECK_TIMEOUT_SEC: ${APP_REDIS_HEALTHCHECK_TIMEOUT_SEC:-2}
+  APP_RATE_LIMIT_USER_REQUESTS: ${APP_RATE_LIMIT_USER_REQUESTS:-60}
+  APP_RATE_LIMIT_USER_WINDOW_SEC: ${APP_RATE_LIMIT_USER_WINDOW_SEC:-60}
+  APP_RATE_LIMIT_LOGIN_REQUESTS: ${APP_RATE_LIMIT_LOGIN_REQUESTS:-10}
+  APP_RATE_LIMIT_LOGIN_WINDOW_SEC: ${APP_RATE_LIMIT_LOGIN_WINDOW_SEC:-60}
   APP_COMPUTE_WORKERS: ${APP_COMPUTE_WORKERS:-2}
   APP_COMPUTE_MAX_POINTS: ${APP_COMPUTE_MAX_POINTS:-100000}
   APP_COMPUTE_CHUNK_POINTS: ${APP_COMPUTE_CHUNK_POINTS:-1024}
@@ -65,6 +87,28 @@ services:
       postgres:
         condition: service_healthy
 
+  redis:
+    image: ${APP_DEPLOY_REDIS_IMAGE:-redis:8-alpine}
+    environment:
+      REDISCLI_AUTH: ${APP_REDIS_PASSWORD:-orbits_redis}
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --requirepass
+      - ${APP_REDIS_PASSWORD:-orbits_redis}
+      - --maxmemory
+      - ${APP_DEPLOY_REDIS_MAX_MEMORY_BYTES:-67108864}
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - "${APP_DEPLOY_BIND_HOST:-127.0.0.1}:${APP_REDIS_PORT:-56379}:6379"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-e", "ping"]
+
   app:
     build:
       <<: *build
@@ -76,6 +120,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     stop_grace_period: ${APP_SHUTDOWN_TIMEOUT_SEC:-15}s
     healthcheck:
       <<: *healthcheck
@@ -111,6 +157,7 @@ services:
       target: test
     environment:
       APP_BENCH_MODE: ${APP_BENCH_MODE:-http}
+      APP_AUTH_TOKEN_SECRET: ${APP_AUTH_TOKEN_SECRET}
       APP_BENCH_BASE_URL: http://app:8000
       APP_BENCH_INPUT: ${APP_BENCH_INPUT:-examples/request-omm.json}
       APP_BENCH_OUTPUT: ${APP_BENCH_OUTPUT:-artifacts/benchmark.json}
@@ -118,6 +165,8 @@ services:
       APP_BENCH_CONCURRENCY: ${APP_BENCH_CONCURRENCY:-4}
       APP_BENCH_TIMEOUT_SEC: ${APP_BENCH_TIMEOUT_SEC:-60}
       APP_BENCH_HEALTH_INTERVAL_SEC: ${APP_BENCH_HEALTH_INTERVAL_SEC:-0.05}
+      APP_BENCH_USERNAME: ${APP_BENCH_USERNAME:-}
+      APP_BENCH_PASSWORD: ${APP_BENCH_PASSWORD:-}
       APP_COMPUTE_CHUNK_POINTS: ${APP_COMPUTE_CHUNK_POINTS:-1024}
       APP_COMPUTE_NUMERIC_THREADS: ${APP_COMPUTE_NUMERIC_THREADS:-1}
       APP_COMPUTE_WORKERS: ${APP_COMPUTE_WORKERS:-2}
@@ -131,9 +180,26 @@ services:
       APP_TEST_DB_USER: ${APP_TEST_DB_USER:-orbits_test}
       APP_TEST_DB_PASSWORD: ${APP_TEST_DB_PASSWORD:-orbits_test}
       APP_TEST_DB_NAME: ${APP_TEST_DB_NAME:-orbits_test}
+      APP_TEST_REDIS_HOST: redis-test
+      APP_TEST_REDIS_PORT: 6379
+      APP_TEST_REDIS_PASSWORD: ${APP_TEST_REDIS_PASSWORD:-orbits_redis_test}
     depends_on:
       postgres-test:
         condition: service_healthy
+      redis-test:
+        condition: service_healthy
+
+  redis-test:
+    profiles: ["test"]
+    image: ${APP_DEPLOY_REDIS_IMAGE:-redis:8-alpine}
+    environment:
+      REDISCLI_AUTH: ${APP_TEST_REDIS_PASSWORD:-orbits_redis_test}
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${APP_TEST_REDIS_PASSWORD:-orbits_redis_test}"]
+    ports:
+      - "${APP_DEPLOY_BIND_HOST:-127.0.0.1}:${APP_TEST_REDIS_PORT:-56380}:6379"
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-e", "ping"]
 
 volumes:
   postgres-data:

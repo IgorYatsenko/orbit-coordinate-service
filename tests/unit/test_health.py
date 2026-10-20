@@ -20,24 +20,27 @@ async def test_liveness_does_not_contact_database(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.parametrize(
-    ("available", "compute", "status_code"), [(True, True, 200), (False, True, 503), (True, False, 503)]
+    ("available", "compute", "redis", "status_code"),
+    [(True, True, True, 200), (False, True, True, 503), (True, False, True, 503), (True, True, False, 503)],
 )
 async def test_readiness_reports_database_state(
-    monkeypatch: pytest.MonkeyPatch, available: bool, compute: bool, status_code: int
+    monkeypatch: pytest.MonkeyPatch, available: bool, compute: bool, redis: bool, status_code: int
 ) -> None:
     app = Application(settings=_Settings())
     ping = AsyncMock(return_value=available)
     monkeypatch.setattr(app.services.database, "ping", ping)
     monkeypatch.setattr(app.services.compute, "ping", AsyncMock(return_value=compute))
+    monkeypatch.setattr(app.services.redis, "ping", AsyncMock(return_value=redis))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/health/ready")
     expected = "ok" if available else "unavailable"
     assert response.status_code == status_code
     assert response.json() == {
-        "status": "ok" if available and compute else "unavailable",
+        "status": "ok" if available and compute and redis else "unavailable",
         "version": __version__,
         "database": expected,
         "compute": "ok" if compute else "unavailable",
+        "redis": "ok" if redis else "unavailable",
     }
     ping.assert_awaited_once_with()
 

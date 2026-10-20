@@ -2,10 +2,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class BenchmarkConfiguration(BaseModel):
+    APP_BENCH_USERNAME: str = Field(default="", exclude=True, description="Account used for HTTP measurements.")
+    APP_BENCH_PASSWORD: SecretStr = Field(
+        default=SecretStr(""), exclude=True, description="Benchmark account password; never included in reports."
+    )
     APP_BENCH_MODE: Literal["core", "http"] = Field(default="http", description="Direct worker or HTTP measurement.")
     APP_BENCH_BASE_URL: str = Field(default="http://127.0.0.1:8000", description="Running API URL.")
     APP_BENCH_INPUT: Path = Field(default=Path("examples/request-omm.json"), description="Fixed input request file.")

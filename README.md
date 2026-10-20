@@ -2,38 +2,35 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Текущая версия **0.2.1** вычисляет траекторию из TLE или CelesTrak GP JSON и возвращает
-широту, долготу и высоту WGS84. Реестр КА, вход пользователей и ограничения запросов
-появятся в версии 0.3.0.
+Текущая версия **0.3.0** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
+Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
 ## Запуск
 
-Нужны Docker и Docker Compose. Из корня репозитория:
+Нужны Docker, Docker Compose и OpenSSL. Из корня репозитория одна команда:
 
 ```bash
-docker compose up --build --wait
+./scripts/start-local.sh
 curl --fail http://localhost:8000/health/live
 curl --fail http://localhost:8000/health/ready
 ```
 
-Compose запускает PostgreSQL, применяет миграции отдельным контейнером и запускает API.
+Скрипт создаёт локальный `.env` и случайный секрет подписи токенов, если их ещё нет.
+Секрет сохраняется между запусками и не попадает в Git. Compose запускает PostgreSQL и Redis,
+применяет миграции отдельным контейнером и запускает API.
 Успешная команда `--wait` означает, что приложение прошло проверку готовности.
 Swagger UI доступен по адресу [localhost:8000/docs](http://localhost:8000/docs).
 
 Пример ответа `/health/ready`:
 
 ```json
-{"status":"ok","version":"0.2.1","database":"ok","compute":"ok"}
+{"status":"ok","version":"0.3.0","database":"ok","compute":"ok","redis":"ok"}
 ```
 
-Настройки по умолчанию позволяют запустить пример сразу. Для изменения параметров:
-
-```bash
-cp .env.example .env
-```
-
-Отредактируйте `.env` и повторите команду запуска. Приложение и PostgreSQL публикуются
-только на `127.0.0.1`. Порты по умолчанию: API `8000`, PostgreSQL `55432`.
+Для изменения параметров отредактируйте `.env` и повторите запуск.
+API, PostgreSQL и Redis публикуются только на `127.0.0.1`.
+Порты по умолчанию: API `8000`, PostgreSQL `55432`, Redis `56379`.
 Учётные данные в примере предназначены для локальной демонстрации.
 
 ```bash
@@ -41,11 +38,28 @@ docker compose logs --tail 50 app migrate
 docker compose stop
 ```
 
-`stop` сохраняет рабочие данные PostgreSQL в Docker volume.
+`stop` сохраняет рабочие данные PostgreSQL в Docker volume. Счётчики Redis временные.
+
+## Вход
+
+Создайте пользователя. Пароль вводится скрыто дважды, минимум 12 символов:
+
+```bash
+docker compose exec app python -m api.cli create-user reviewer
+```
+
+Откройте [Swagger](http://localhost:8000/docs), выполните `POST /api/v1/auth/login`
+с этим логином и паролем. Скопируйте `access_token` из ответа, нажмите **Authorize**,
+вставьте токен без слова `Bearer`, затем подтвердите. Токен действует 15 минут.
+Открытой регистрации нет; все пользователи имеют одинаковый доступ к общему реестру.
+
+Для curl сохраните полученный токен в переменную `TOKEN`. Передавать пароль в URL
+или сохранять токен в репозитории не нужно. Управление пользователями, причины выбора JWT
+и поведение лимитов описаны в [доступе и ограничениях](docs/access.md).
 
 ## Расчёт координат
 
-В Swagger откройте `POST /api/v1/orbits/coordinates`, выберите пример в списке `Examples`,
+После входа в Swagger откройте `POST /api/v1/orbits/coordinates`, выберите пример в списке `Examples`,
 нажмите `Try it out`, затем `Execute`. Доступны рабочие варианты TLE и CelesTrak GP JSON;
 строковые заглушки заменены настоящими элементами МКС. Каждый пример возвращает 61 точку.
 
@@ -57,6 +71,7 @@ TLE:
 
 ```bash
 curl --fail-with-body -sS http://localhost:8000/api/v1/orbits/coordinates \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' --data-binary @examples/request-tle.json
 ```
 
@@ -64,6 +79,7 @@ JSON с орбитальными параметрами:
 
 ```bash
 curl --fail-with-body -sS http://localhost:8000/api/v1/orbits/coordinates \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' --data-binary @examples/request-omm.json
 ```
 
@@ -89,6 +105,20 @@ curl --fail -sS 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=
 Параметры доступны через `APP_COMPUTE_*`, подробности — в [настройках](docs/configuration.md).
 Первые [замеры](docs/benchmarks.md) содержат условия, команды и ограничения результатов.
 
+## Реестр КА
+
+`POST /api/v1/satellites` создаёт метаданные, `GET` возвращает страницу списка,
+`GET /{id}` читает запись, `PUT /{id}` полностью заменяет её, `DELETE /{id}` удаляет.
+Пример создания:
+
+```bash
+curl --fail-with-body -sS http://localhost:8000/api/v1/satellites \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"norad_id":25544,"name":"ISS (ZARYA)","international_designator":"1998-067A","launch_date":"1998-11-20"}'
+```
+
+NORAD ID уникален. Расчёт не создаёт запись автоматически и не требует предварительной регистрации КА.
+
 ## Разработка на Python
 
 Нужны Python 3.13 и Poetry 2.4.1:
@@ -96,10 +126,11 @@ curl --fail -sS 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=
 ```bash
 poetry env use python3.13
 poetry install
-cp .env.example .env
+./scripts/start-local.sh --init-only
 poetry run pre-commit install
-docker compose up -d --wait postgres
+docker compose up -d --wait postgres redis
 poetry run poe migrate
+poetry run python -m api.cli create-user reviewer
 poetry run poe start
 ```
 
@@ -119,7 +150,7 @@ poetry run poe check
 poetry run pre-commit run --all-files
 ```
 
-Все тесты в Docker с отдельной тестовой PostgreSQL:
+Все тесты в Docker с отдельными тестовыми PostgreSQL и Redis:
 
 ```bash
 docker compose --profile test run --build --rm tests
@@ -128,12 +159,13 @@ docker compose --profile test run --build --rm tests
 Все тесты локальной `.venv` с тестовой БД в Docker:
 
 ```bash
-docker compose --profile test up -d --wait postgres-test
+docker compose --profile test up -d --wait postgres-test redis-test
 poetry run poe test
 ```
 
 Тестовая БД использует собственные `APP_TEST_DB_*`, порт `55433` и временное хранилище
-в памяти. Тесты не используют рабочий volume `postgres-data`.
+в памяти. Redis тестов использует порт `56380`, отдельный контейнер, DB 15 и уникальные ключи.
+Тесты не используют рабочий volume `postgres-data` и рабочие счётчики лимитов.
 Отдельные наборы: `poetry run poe test-unit` и `poetry run poe test-integration`.
 
 Описание проверок и их ограничений: [тестирование](docs/testing.md).
@@ -144,6 +176,7 @@ poetry run poe test
   транзакции, запуск ресурсов и рассмотренные альтернативы.
 - [Предметная область](docs/domain.md): КА, TLE, OMM, эпоха, SGP4, WGS72/WGS84 и ограничения точности.
 - [Настройки](docs/configuration.md): все переменные окружения, приоритеты и начальная конфигурация.
+- [Доступ и ограничения](docs/access.md): пароли, токены, Redis, команды управления и альтернативы.
 - [Контракт расчёта](docs/api.md): запросы, ответы и ошибки.
 - [Замеры](docs/benchmarks.md): воспроизводимые начальные результаты.
 - [История изменений](CHANGELOG.md).
@@ -151,19 +184,18 @@ poetry run poe test
 ```text
 api/router/          HTTP-маршруты и ответы
 api/managers/        координация операций
-api/services/        PostgreSQL, вычислительный пул и жизненный цикл ресурсов
+api/services/        PostgreSQL, Redis, проверка паролей, вычислительный пул и lifecycle
+api/db/              SQL-запросы с переданной сессией
 api/orbits/          численное ядро и процесс вычисления
 api/settings.py      настройки из окружения и .env
 models/pydantic/     модели внешних контрактов
-models/sqlalchemy/   основание ORM-моделей
+models/sqlalchemy/   ORM-модели пользователей и спутников
 migrations/postgres/ миграции Alembic
 tests/unit/          проверки без PostgreSQL
-tests/integration/   проверки с настоящей PostgreSQL
+tests/integration/   проверки с настоящими PostgreSQL, Redis и процессами
 examples/            готовые запросы TLE и JSON
 benchmarks/          ручные замеры ядра и HTTP
 ```
-
-Каталог доступа к данным появится вместе с реестром в 0.3.0.
 
 `OrbitCalculator` хранит таблицы времени и размер порции, `CalculationWorker` владеет
 одним вычислителем в дочернем процессе. Модели результата и отчётов находятся в

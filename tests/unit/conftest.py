@@ -13,6 +13,7 @@ def isolated_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator
         if name.startswith("APP_"):
             monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("APP_AUTH_TOKEN_SECRET", "unit-test-secret-for-token-signing-only")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

@@ -19,7 +19,7 @@ async def liveness() -> pydantic.ServiceInfoResponse:
     "/health/ready",
     response_model=pydantic.ReadinessResponse,
     responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": pydantic.ReadinessResponse}},
-    summary="Check PostgreSQL and calculation pool availability",
+    summary="Check PostgreSQL, Redis and calculation pool availability",
 )
 async def readiness(
     response: Response,

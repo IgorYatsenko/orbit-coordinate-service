@@ -1,7 +1,10 @@
 from api.services.base import BaseServiceHub
 from api.services.compute import Compute
+from api.services.passwords import Passwords
 from api.services.postgresql import PostgreSQL
+from api.services.redis import Redis
 from api.settings import _Settings
+from api.tokens import Tokens
 
 
 class Services(BaseServiceHub):
@@ -24,4 +27,7 @@ class Services(BaseServiceHub):
             start_timeout_sec=config.APP_COMPUTE_START_TIMEOUT_SEC,
             healthcheck_timeout_sec=config.APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC,
         )
-        super().__init__(services=(self.database, self.compute))
+        self.redis = Redis(config=config)
+        self.passwords = Passwords(config=config)
+        self.tokens = Tokens(config=config)
+        super().__init__(services=(self.database, self.redis, self.passwords, self.compute))

@@ -23,7 +23,18 @@ def test_database_password_is_escaped_and_hidden(monkeypatch: pytest.MonkeyPatch
     assert password not in repr(settings)
 
 
-@pytest.mark.parametrize(("name", "value"), [("APP_DB_POOL_SIZE", "0"), ("APP_DB_STATEMENT_TIMEOUT_SEC", "0")])
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("APP_DB_POOL_SIZE", "0"),
+        ("APP_DB_STATEMENT_TIMEOUT_SEC", "0"),
+        ("APP_AUTH_TOKEN_SECRET", "short"),
+        ("APP_AUTH_TOKEN_TTL_SEC", "0"),
+        ("APP_AUTH_PASSWORD_MEMORY_KIB", "8"),
+        ("APP_RATE_LIMIT_USER_REQUESTS", "0"),
+        ("APP_REDIS_DB", "16"),
+    ],
+)
 def test_invalid_resource_limits_fail_before_startup(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
     monkeypatch.setenv(name, value)
     with pytest.raises(ValidationError):
