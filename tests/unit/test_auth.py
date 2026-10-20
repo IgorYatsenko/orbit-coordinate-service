@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 import jwt
@@ -11,37 +11,33 @@ from api.services.passwords import Passwords
 from api.settings import _Settings
 from api.tokens import Tokens
 from models.exceptions.access import AuthenticationBusy, AuthenticationFailed
-from models.pydantic.auth import AuthenticatedUser, TokenClaims
+from models.pydantic.auth import TokenClaims
 
 
 @pytest.fixture
-def user() -> AuthenticatedUser:
-    return AuthenticatedUser(
-        id=uuid4(), username="reviewer", is_active=True, created_at=datetime.now(UTC), token_version=0
-    )
+def user_id() -> UUID:
+    return uuid4()
 
 
-def test_signed_token_roundtrip_has_bounded_lifetime(user: AuthenticatedUser) -> None:
+def test_signed_token_roundtrip_has_bounded_lifetime(user_id: UUID) -> None:
     settings = _Settings(APP_AUTH_TOKEN_TTL_SEC=37)
     tokens = Tokens(config=settings)
-    issued = tokens.issue(user)
+    issued = tokens.issue(user_id)
     claims = tokens.decode(issued.access_token)
-    assert claims.sub == user.id
-    assert claims.ver == user.token_version
+    assert claims.sub == user_id
     assert claims.exp - claims.iat == issued.expires_in == 37
     assert issued.access_token not in repr(issued)
 
 
 @pytest.mark.parametrize(
     "mutation",
-    ["expired", "signature", "audience", "issuer", "missing_exp", "invalid_sub", "boolean_version", "algorithm"],
+    ["expired", "signature", "audience", "issuer", "missing_exp", "invalid_sub", "boolean_iat", "algorithm"],
 )
-def test_invalid_tokens_are_rejected(user: AuthenticatedUser, mutation: str) -> None:
+def test_invalid_tokens_are_rejected(user_id: UUID, mutation: str) -> None:
     settings = _Settings()
     now = int(datetime.now(UTC).timestamp())
     claims = TokenClaims(
-        sub=user.id,
-        ver=0,
+        sub=user_id,
         iat=now,
         exp=now + 60,
         iss=settings.APP_AUTH_TOKEN_ISSUER,
@@ -61,8 +57,8 @@ def test_invalid_tokens_are_rejected(user: AuthenticatedUser, mutation: str) -> 
         del claims["exp"]
     elif mutation == "invalid_sub":
         claims["sub"] = "not-a-uuid"
-    elif mutation == "boolean_version":
-        claims["ver"] = True
+    elif mutation == "boolean_iat":
+        claims["iat"] = True
     elif mutation == "algorithm":
         algorithm = "HS384"
         key = "test-key-for-unsupported-algorithm" * 2

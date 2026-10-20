@@ -5,7 +5,7 @@ from api.services.redis import Redis
 from api.settings import _Settings
 from api.tokens import Tokens
 from models.exceptions.access import AuthenticationFailed
-from models.pydantic.auth import AuthenticatedUser, LoginRequest, TokenResponse
+from models.pydantic.auth import LoginRequest, TokenResponse, UserResponse
 
 
 class AuthManager:
@@ -34,9 +34,9 @@ class AuthManager:
         valid = await self._passwords.verify(encoded, credentials.password.get_secret_value())
         if user is None or not user.is_active or not valid:
             raise AuthenticationFailed()
-        return self._tokens.issue(AuthenticatedUser.model_validate(user))
+        return self._tokens.issue(user.id)
 
-    async def authenticate(self, token: str) -> AuthenticatedUser:
+    async def authenticate(self, token: str) -> UserResponse:
         claims = self._tokens.decode(token)
         await self._redis.enforce(
             bucket="user",
@@ -46,6 +46,6 @@ class AuthManager:
         )
         async with self._database.session() as session:
             user = await users.get_by_id(session, claims.sub)
-        if user is None or not user.is_active or user.token_version != claims.ver:
+        if user is None or not user.is_active:
             raise AuthenticationFailed()
-        return AuthenticatedUser.model_validate(user)
+        return UserResponse.model_validate(user)

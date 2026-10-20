@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Response
 
 from api.dependencies import get_auth_manager, get_current_user, limit_login
 from api.managers.auth import AuthManager
-from models.pydantic.auth import AuthenticatedUser, LoginRequest, TokenResponse, UserResponse
+from models.pydantic.auth import LoginRequest, TokenResponse, UserResponse
 from models.pydantic.errors import ErrorResponse, RequestValidationErrorResponse
 
 router = APIRouter(
@@ -30,5 +30,5 @@ async def login(
 
 
 @router.get("/me", response_model=UserResponse, summary="Get current user")
-async def current_user(user: Annotated[AuthenticatedUser, Depends(get_current_user)]) -> UserResponse:
-    return UserResponse.model_validate(user, from_attributes=True)
+async def current_user(user: Annotated[UserResponse, Depends(get_current_user)]) -> UserResponse:
+    return user

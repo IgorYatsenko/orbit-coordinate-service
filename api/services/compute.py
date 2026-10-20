@@ -55,7 +55,7 @@ class Compute(BaseService):
                 self._start_timeout_sec,
             ),
         )
-        probes = [self._submit(CalculationWorker.probe) for _ in range(self._workers)]
+        probes = [self._submit(False, CalculationWorker.probe) for _ in range(self._workers)]
         async with asyncio.timeout(self._start_timeout_sec):
             await asyncio.gather(*(asyncio.shield(probe) for probe in probes))
         self._ready = True
@@ -69,10 +69,12 @@ class Compute(BaseService):
             await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
         self._in_flight = 0
 
-    def _submit[**P, R](self, function: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> asyncio.Future[R]:
+    def _submit[**P, R](
+        self, count_capacity: bool, function: Callable[P, R], *args: P.args, **kwargs: P.kwargs
+    ) -> asyncio.Future[R]:
         if self._executor is None or self._broken:
             raise ComputeUnavailable("Calculation pool is unavailable")
-        if self._in_flight >= self._workers:
+        if count_capacity and self._in_flight >= self._workers:
             raise ComputeBusy("All calculation processes are occupied")
         loop = asyncio.get_running_loop()
         try:
@@ -80,19 +82,22 @@ class Compute(BaseService):
         except BrokenProcessPool as error:
             self._broken = True
             raise ComputeUnavailable("Calculation pool is broken") from error
-        self._in_flight += 1
+        # Only calculations consume request capacity; at most one shared health probe can also be queued.
+        if count_capacity:
+            self._in_flight += 1
 
         def completed(result: Future[R]) -> None:
             broken = not result.cancelled() and isinstance(result.exception(), BrokenProcessPool)
-            loop.call_soon_threadsafe(self._complete, broken)
+            loop.call_soon_threadsafe(self._complete, broken, count_capacity)
 
         future.add_done_callback(completed)
         wrapped = asyncio.wrap_future(future)
         wrapped.add_done_callback(_consume_exception)
         return wrapped
 
-    def _complete(self, broken: bool) -> None:
-        self._in_flight -= 1
+    def _complete(self, broken: bool, count_capacity: bool) -> None:
+        if count_capacity:
+            self._in_flight -= 1
         if broken:
             self._broken = True
             logger.error("Calculation process exited unexpectedly; application restart is required")
@@ -100,7 +105,7 @@ class Compute(BaseService):
     async def calculate(self, request: CoordinateRequest) -> CalculationResult:
         if not self._ready:
             raise ComputeUnavailable("Calculation pool is not ready")
-        future = self._submit(CalculationWorker.execute, request)
+        future = self._submit(True, CalculationWorker.execute, request)
         try:
             async with asyncio.timeout(self._timeout_sec):
                 return await asyncio.shield(future)
@@ -118,7 +123,7 @@ class Compute(BaseService):
             return True
         try:
             if self._health_probe is None:
-                self._health_probe = self._submit(CalculationWorker.probe)
+                self._health_probe = self._submit(False, CalculationWorker.probe)
             future = self._health_probe
             async with asyncio.timeout(self._healthcheck_timeout_sec):
                 await asyncio.shield(future)

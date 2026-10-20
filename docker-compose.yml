@@ -158,7 +158,7 @@ services:
     environment:
       APP_BENCH_MODE: ${APP_BENCH_MODE:-http}
       APP_AUTH_TOKEN_SECRET: ${APP_AUTH_TOKEN_SECRET}
-      APP_BENCH_BASE_URL: http://app:8000
+      APP_BENCH_BASE_URL: http://app:${APP_PORT:-8000}
       APP_BENCH_INPUT: ${APP_BENCH_INPUT:-examples/request-omm.json}
       APP_BENCH_OUTPUT: ${APP_BENCH_OUTPUT:-artifacts/benchmark.json}
       APP_BENCH_REPETITIONS: ${APP_BENCH_REPETITIONS:-5}
