@@ -2,32 +2,35 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Текущая версия **0.3.1** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+Текущая версия **0.3.2** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
 широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
 Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
 ## Запуск
 
-Нужны Docker, Docker Compose и OpenSSL. Из корня репозитория одна команда:
+Нужны Docker и Docker Compose. Перед первым запуском скопируйте настройки:
 
 ```bash
-./scripts/start-local.sh
+cp .env.example .env
+```
+
+Затем окружение запускается одной командой:
+
+```bash
+docker compose up --build --wait
 curl --fail http://localhost:8000/health/live
 curl --fail http://localhost:8000/health/ready
 ```
 
-Скрипт создаёт локальный `.env` и случайный секрет подписи токенов, если их ещё нет.
-Секрет сохраняется между запусками и не попадает в Git. Compose запускает PostgreSQL и Redis,
+Compose запускает PostgreSQL и Redis,
 применяет миграции отдельным контейнером и запускает API.
-Затем `dev/project_user.py` создаёт демонстрационного пользователя `testuser / test-password`.
-Повторный запуск сохраняет существующую запись и пароль.
 Успешная команда `--wait` означает, что приложение прошло проверку готовности.
 Swagger UI доступен по адресу [localhost:8000/docs](http://localhost:8000/docs).
 
 Пример ответа `/health/ready`:
 
 ```json
-{"status":"ok","version":"0.3.1","database":"ok","compute":"ok","redis":"ok"}
+{"status":"ok","version":"0.3.2","database":"ok","compute":"ok","redis":"ok"}
 ```
 
 Для изменения параметров отредактируйте `.env` и повторите запуск.
@@ -44,12 +47,14 @@ docker compose stop
 
 ## Вход
 
-После `./scripts/start-local.sh` готов пользователь `testuser` с паролем `test-password`.
-Отдельно запустить подготовку демоданных можно так:
+Добавьте демонстрационного пользователя `testuser / test-password` задачей Poe
+(нужны Python 3.13 и установленное Poetry-окружение):
 
 ```bash
-docker compose exec -T app python -m dev.main
+poetry run poe add-test-user
 ```
+
+Повторный вызов сохраняет существующую запись и пароль.
 
 Откройте [Swagger](http://localhost:8000/docs), выполните `POST /api/v1/auth/login`
 с этими логином и паролем. Готовый пример запроса уже содержит их.
@@ -130,11 +135,11 @@ NORAD ID уникален. Расчёт не создаёт запись авт�
 ```bash
 poetry env use python3.13
 poetry install
-./scripts/start-local.sh --init-only
+cp .env.example .env
 poetry run pre-commit install
 docker compose up -d --wait postgres redis
 poetry run poe migrate
-poetry run python -m dev.main
+poetry run poe add-test-user
 poetry run poe start
 ```
 
@@ -199,7 +204,6 @@ tests/unit/          проверки без PostgreSQL
 tests/integration/   проверки с настоящими PostgreSQL, Redis и процессами
 examples/            готовые запросы TLE и JSON
 benchmarks/          ручные замеры ядра и HTTP
-dev/                 подготовка демонстрационного пользователя
 ```
 
 `OrbitCalculator` хранит таблицы времени и размер порции, `CalculationWorker` владеет

@@ -12,11 +12,11 @@ from sqlalchemy import Connection, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from api.db import users
 from api.main import Application
 from api.services import Services
 from api.services.postgresql import PostgreSQL
 from api.settings import _Settings
-from dev.project_user import create_user_setup
 from models.pydantic.auth import LoginRequest
 
 
@@ -115,7 +115,9 @@ def user_credentials() -> LoginRequest:
 
 @pytest.fixture
 async def registered_user(application: Application, user_credentials: LoginRequest) -> None:
-    assert await create_user_setup(services=application.services, credentials=user_credentials)
+    encoded = await application.services.passwords.hash(user_credentials.password.get_secret_value())
+    async with application.services.database.session() as session:
+        await users.create_if_missing(session, username=user_credentials.username, password_hash=encoded)
 
 
 @pytest.fixture

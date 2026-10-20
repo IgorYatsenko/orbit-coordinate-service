@@ -3,10 +3,10 @@ import asyncio
 import httpx
 import pytest
 
+from api.db import users
 from api.main import Application
 from api.services.redis import Redis
 from api.settings import _Settings
-from dev.project_user import create_user_setup
 from models.exceptions.access import RateLimitExceeded, RedisUnavailable
 from models.pydantic.auth import LoginRequest
 
@@ -39,7 +39,9 @@ async def test_user_limit_is_shared_by_tokens_but_isolated_between_users(
     assert rejected.json()["detail"]["code"] == "rate_limit_exceeded"
     assert int(rejected.headers["retry-after"]) == 1
     other = LoginRequest(username="other-user", password="another-test-password")
-    assert await create_user_setup(services=application.services, credentials=other)
+    encoded = await application.services.passwords.hash(other.password.get_secret_value())
+    async with application.services.database.session() as session:
+        await users.create_if_missing(session, username=other.username, password_hash=encoded)
     second = await client.post(
         "/api/v1/auth/login", json={"username": other.username, "password": other.password.get_secret_value()}
     )

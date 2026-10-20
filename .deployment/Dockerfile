@@ -23,7 +23,6 @@ COPY migrations ./migrations
 COPY tests ./tests
 COPY examples ./examples
 COPY benchmarks ./benchmarks
-COPY dev ./dev
 CMD ["poetry", "run", "pytest"]
 
 FROM ${PYTHON_IMAGE} AS runtime
@@ -35,7 +34,6 @@ RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home a
 COPY --from=builder /app/.venv /app/.venv
 COPY api ./api
 COPY models ./models
-COPY dev ./dev
 COPY migrations ./migrations
 COPY alembic.ini ./
 USER app

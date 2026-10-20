@@ -1,4 +1,7 @@
 import asyncio
+import os
+import sys
+from pathlib import Path
 
 import httpx
 import pytest
@@ -7,12 +10,12 @@ from sqlalchemy import select, update
 from api.main import Application
 from api.services import Services
 from api.settings import _Settings
-from dev.project_user import create_user_setup
 from models.exceptions.access import DatabaseUnavailable
 from models.pydantic.auth import LoginRequest
 from models.sqlalchemy import User
 
 pytestmark = pytest.mark.integration
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 async def test_login_and_current_user_do_not_expose_secrets(
@@ -76,7 +79,6 @@ async def test_database_access_changes_revoke_existing_tokens(
     assert (await client.get("/api/v1/auth/me")).status_code == 200
     async with application.services.database.session() as session:
         await session.execute(update(User).where(User.username == "reviewer").values(is_active=False))
-    assert await create_user_setup(services=application.services, credentials=new_credentials) is False
     assert (await client.get("/api/v1/auth/me")).status_code == 401
     assert (
         await client.post(
@@ -85,29 +87,38 @@ async def test_database_access_changes_revoke_existing_tokens(
     ).status_code == 401
 
 
-async def test_demo_setup_preserves_existing_user_and_password(
-    application: Application, client: httpx.AsyncClient, user_credentials: LoginRequest
-) -> None:
-    original = (await client.get("/api/v1/auth/me")).json()
-    changed = LoginRequest(username=user_credentials.username, password="not-the-original-password")
-    assert await create_user_setup(services=application.services, credentials=changed) is False
-    assert (await client.get("/api/v1/auth/me")).json() == original
-    for credentials, expected in ((user_credentials, 200), (changed, 401)):
-        result = await client.post(
-            "/api/v1/auth/login",
-            json={"username": credentials.username, "password": credentials.password.get_secret_value()},
+async def test_poe_task_creates_test_user_and_preserves_existing_record(application: Application) -> None:
+    config = application.services.config
+    environment = {
+        **os.environ,
+        "APP_DB_HOST": config.APP_DB_HOST,
+        "APP_DB_PORT": str(config.APP_DB_PORT),
+        "APP_DB_USER": config.APP_DB_USER,
+        "APP_DB_PASSWORD": config.APP_DB_PASSWORD.get_secret_value(),
+        "APP_DB_NAME": config.APP_DB_NAME,
+        "APP_AUTH_TOKEN_SECRET": config.APP_AUTH_TOKEN_SECRET.get_secret_value(),
+    }
+    records = []
+    for _ in range(2):
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            "-m",
+            "poethepoet",
+            "add-test-user",
+            cwd=PROJECT_ROOT,
+            env=environment,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
-        assert result.status_code == expected
-
-
-async def test_concurrent_demo_setup_creates_one_user(application: Application, user_credentials: LoginRequest) -> None:
-    results = await asyncio.gather(
-        *(create_user_setup(services=application.services, credentials=user_credentials) for _ in range(2))
-    )
-    assert sorted(results) == [False, True]
+        output, errors = await process.communicate()
+        assert process.returncode == 0, (output + errors).decode()
+        async with application.services.database.session() as session:
+            row = (await session.execute(select(User.id, User.password_hash).where(User.username == "testuser"))).one()
+            records.append(row)
+    assert records[0] == records[1]
     async with application.services.database.session() as session:
-        rows = list(await session.scalars(select(User).where(User.username == user_credentials.username)))
-    assert len(rows) == 1
+        user = (await session.scalars(select(User).where(User.username == "testuser"))).one()
+    assert await application.services.passwords.verify(user.password_hash, "test-password")
 
 
 async def test_database_connection_refusal_returns_safe_503(

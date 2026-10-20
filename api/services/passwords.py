@@ -32,7 +32,7 @@ class Passwords(BaseService):
         return self._dummy_hash is not None
 
     async def hash(self, password: str) -> str:
-        # Used by the development setup and once during startup, not by a public registration route.
+        # Used by the demonstration task and once during startup, not by a public registration route.
         return await asyncio.to_thread(self._hasher.hash, password)
 
     def _verify(self, encoded: str, password: str) -> bool:

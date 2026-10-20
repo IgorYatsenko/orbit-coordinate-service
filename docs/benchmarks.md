@@ -9,12 +9,13 @@
 Нужны установленное Poetry-окружение и работающий API для HTTP-режима:
 
 ```bash
-./scripts/start-local.sh
+docker compose up --build --wait
+poetry run poe add-test-user
 APP_BENCH_MODE=core APP_BENCH_OUTPUT=artifacts/core.json poetry run poe benchmark
 APP_BENCH_MODE=http APP_BENCH_OUTPUT=artifacts/http.json poetry run poe benchmark
 ```
 
-Перед HTTP-замером запустите `start-local.sh`, который создаёт демонстрационного пользователя,
+Перед HTTP-замером выполните `poetry run poe add-test-user`
 и проверьте `APP_BENCH_USERNAME` и `APP_BENCH_PASSWORD` в локальном `.env`.
 Пара из `.env.example` совпадает с демонстрационными `testuser / test-password`.
 Один вход выполняется перед прогревом; его время не включается в сценарии расчёта.
