@@ -2,7 +2,7 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Текущая версия **0.3.0** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+Текущая версия **0.3.1** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
 широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
 Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
@@ -19,13 +19,15 @@ curl --fail http://localhost:8000/health/ready
 Скрипт создаёт локальный `.env` и случайный секрет подписи токенов, если их ещё нет.
 Секрет сохраняется между запусками и не попадает в Git. Compose запускает PostgreSQL и Redis,
 применяет миграции отдельным контейнером и запускает API.
+Затем `dev/project_user.py` создаёт демонстрационного пользователя `testuser / test-password`.
+Повторный запуск сохраняет существующую запись и пароль.
 Успешная команда `--wait` означает, что приложение прошло проверку готовности.
 Swagger UI доступен по адресу [localhost:8000/docs](http://localhost:8000/docs).
 
 Пример ответа `/health/ready`:
 
 ```json
-{"status":"ok","version":"0.3.0","database":"ok","compute":"ok","redis":"ok"}
+{"status":"ok","version":"0.3.1","database":"ok","compute":"ok","redis":"ok"}
 ```
 
 Для изменения параметров отредактируйте `.env` и повторите запуск.
@@ -42,19 +44,21 @@ docker compose stop
 
 ## Вход
 
-Создайте пользователя. Пароль вводится скрыто дважды, минимум 12 символов:
+После `./scripts/start-local.sh` готов пользователь `testuser` с паролем `test-password`.
+Отдельно запустить подготовку демоданных можно так:
 
 ```bash
-docker compose exec app python -m api.cli create-user reviewer
+docker compose exec -T app python -m dev.main
 ```
 
 Откройте [Swagger](http://localhost:8000/docs), выполните `POST /api/v1/auth/login`
-с этим логином и паролем. Скопируйте `access_token` из ответа, нажмите **Authorize**,
+с этими логином и паролем. Готовый пример запроса уже содержит их.
+Скопируйте `access_token` из ответа, нажмите **Authorize**,
 вставьте токен без слова `Bearer`, затем подтвердите. Токен действует 15 минут.
 Открытой регистрации нет; все пользователи имеют одинаковый доступ к общему реестру.
 
 Для curl сохраните полученный токен в переменную `TOKEN`. Передавать пароль в URL
-или сохранять токен в репозитории не нужно. Управление пользователями, причины выбора JWT
+или сохранять токен в репозитории не нужно. Подготовка демопользователя, причины выбора JWT
 и поведение лимитов описаны в [доступе и ограничениях](docs/access.md).
 
 ## Расчёт координат
@@ -130,7 +134,7 @@ poetry install
 poetry run pre-commit install
 docker compose up -d --wait postgres redis
 poetry run poe migrate
-poetry run python -m api.cli create-user reviewer
+poetry run python -m dev.main
 poetry run poe start
 ```
 
@@ -195,6 +199,7 @@ tests/unit/          проверки без PostgreSQL
 tests/integration/   проверки с настоящими PostgreSQL, Redis и процессами
 examples/            готовые запросы TLE и JSON
 benchmarks/          ручные замеры ядра и HTTP
+dev/                 подготовка демонстрационного пользователя
 ```
 
 `OrbitCalculator` хранит таблицы времени и размер порции, `CalculationWorker` владеет

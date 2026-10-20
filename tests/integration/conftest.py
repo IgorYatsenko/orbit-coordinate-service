@@ -13,11 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from api.main import Application
-from api.managers.users import UserManager
 from api.services import Services
 from api.services.postgresql import PostgreSQL
 from api.settings import _Settings
-from models.pydantic.auth import UserCredentials
+from dev.project_user import create_user_setup
+from models.pydantic.auth import LoginRequest
 
 
 class _TestSettings(BaseSettings):
@@ -109,19 +109,18 @@ async def anonymous_client(application: Application) -> AsyncIterator[httpx.Asyn
 
 
 @pytest.fixture
-def user_credentials() -> UserCredentials:
-    return UserCredentials(username="reviewer", password="test-password-not-for-real-use")
+def user_credentials() -> LoginRequest:
+    return LoginRequest(username="reviewer", password="test-password-not-for-real-use")
 
 
 @pytest.fixture
-async def registered_user(application: Application, user_credentials: UserCredentials) -> None:
-    manager = UserManager(database=application.services.database, passwords=application.services.passwords)
-    await manager.create(user_credentials)
+async def registered_user(application: Application, user_credentials: LoginRequest) -> None:
+    assert await create_user_setup(services=application.services, credentials=user_credentials)
 
 
 @pytest.fixture
 async def client(
-    anonymous_client: httpx.AsyncClient, registered_user: None, user_credentials: UserCredentials
+    anonymous_client: httpx.AsyncClient, registered_user: None, user_credentials: LoginRequest
 ) -> httpx.AsyncClient:
     response = await anonymous_client.post(
         "/api/v1/auth/login",

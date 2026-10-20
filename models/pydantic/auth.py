@@ -17,14 +17,10 @@ Username = Annotated[
 
 
 class LoginRequest(BaseModel):
-    username: Username = Field(examples=["reviewer"])
-    password: SecretStr = Field(min_length=1, max_length=128, examples=["your-local-password"])
+    username: Username = Field(examples=["testuser"])
+    password: SecretStr = Field(min_length=1, max_length=128, examples=["test-password"])
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class UserCredentials(LoginRequest):
-    password: SecretStr = Field(min_length=12, max_length=128)
 
 
 class UserResponse(BaseModel):

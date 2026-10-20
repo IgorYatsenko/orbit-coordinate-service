@@ -14,8 +14,9 @@ APP_BENCH_MODE=core APP_BENCH_OUTPUT=artifacts/core.json poetry run poe benchmar
 APP_BENCH_MODE=http APP_BENCH_OUTPUT=artifacts/http.json poetry run poe benchmark
 ```
 
-В версии 0.3.0 перед HTTP-замером создайте пользователя через CLI и заполните
-`APP_BENCH_USERNAME` и `APP_BENCH_PASSWORD` в локальном `.env`.
+Перед HTTP-замером запустите `start-local.sh`, который создаёт демонстрационного пользователя,
+и проверьте `APP_BENCH_USERNAME` и `APP_BENCH_PASSWORD` в локальном `.env`.
+Пара из `.env.example` совпадает с демонстрационными `testuser / test-password`.
 Один вход выполняется перед прогревом; его время не включается в сценарии расчёта.
 Пользователь и пароль исключены из отчёта. Квота пользователя действует как обычно;
 стандартный прогон с пятью повторами и всплеском из четырёх запросов помещается в 60 запросов.

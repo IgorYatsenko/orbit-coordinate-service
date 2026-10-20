@@ -1,6 +1,6 @@
 [project]
 name = "orbit-coordinate-service"
-version = "0.3.0"
+version = "0.3.1"
 description = "A satellite coordinate calculation service and metadata registry."
 authors = []
 readme = "README.md"
@@ -52,7 +52,7 @@ max-complexity = 10
 python-version = "3.13"
 
 [tool.ty.src]
-include = ["api", "models", "migrations", "tests", "benchmarks"]
+include = ["api", "models", "migrations", "tests", "benchmarks", "dev"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
