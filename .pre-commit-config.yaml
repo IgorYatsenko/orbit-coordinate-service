@@ -1,0 +1,64 @@
+default_stages: [pre-commit]
+
+# All hooks use the project's locked environment, including ty's dependencies.
+repos:
+  - repo: local
+    hooks:
+      - id: trailing-whitespace
+        name: Trim trailing whitespace
+        entry: poetry run trailing-whitespace-fixer
+        args: [--markdown-linebreak-ext=md]
+        language: system
+        types: [text]
+      - id: end-of-file-fixer
+        name: Fix end of files
+        entry: poetry run end-of-file-fixer
+        language: system
+        types: [text]
+      - id: check-merge-conflict
+        name: Check merge conflicts
+        entry: poetry run check-merge-conflict
+        language: system
+        types: [text]
+      - id: check-yaml
+        name: Check YAML
+        entry: poetry run check-yaml
+        language: system
+        types: [yaml]
+      - id: check-toml
+        name: Check TOML
+        entry: poetry run check-toml
+        language: system
+        types: [toml]
+      - id: check-added-large-files
+        name: Check large files
+        entry: poetry run check-added-large-files
+        args: [--maxkb=1000]
+        language: system
+      - id: detect-private-key
+        name: Detect private keys
+        entry: poetry run detect-private-key
+        language: system
+        types: [text]
+      - id: ruff-check
+        name: Ruff lint
+        entry: poetry run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: Ruff format
+        entry: poetry run ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: ty
+        name: ty typecheck
+        entry: poetry run ty check --error-on-warning
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: unit-tests
+        name: Unit tests
+        entry: poetry run pytest tests/unit -q
+        language: system
+        pass_filenames: false
+        always_run: true
