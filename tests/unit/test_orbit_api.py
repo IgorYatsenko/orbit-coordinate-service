@@ -1,3 +1,4 @@
+import json
 from unittest.mock import AsyncMock
 
 import httpx
@@ -67,3 +68,20 @@ async def test_openapi_documents_both_validation_and_calculation_errors(omm_requ
     assert detail.detail[0].loc == ["body", "step_seconds"]
     errors = schema["paths"]["/api/v1/orbits/coordinates"]["post"]["responses"]["422"]
     assert len(errors["content"]["application/json"]["schema"]["anyOf"]) == 2
+
+
+@pytest.mark.parametrize("value", ["1e999", "-1e999", "NaN", "Infinity"])
+async def test_non_finite_input_returns_validation_error(omm_request: CoordinateRequest, value: str) -> None:
+    app = Application(settings=_Settings())
+    fields = omm_request.model_dump(mode="json")
+    fields["orbit"]["elements"]["BSTAR"] = "REPLACE_NUMBER"
+    content = json.dumps(fields).replace('"REPLACE_NUMBER"', value)
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/orbits/coordinates", content=content, headers={"Content-Type": "application/json"}
+        )
+    assert response.status_code == 422
+    validation = RequestValidationErrorResponse.model_validate(response.json())
+    assert validation.detail[0].loc == ["body", "orbit", "omm", "elements", "BSTAR"]
+    assert "input" not in response.json()["detail"][0]

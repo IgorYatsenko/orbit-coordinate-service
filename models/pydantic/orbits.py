@@ -170,7 +170,7 @@ class ValidationIssue(BaseModel):
     msg: str
     type: str
 
-    model_config = ConfigDict(extra="allow", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class RequestValidationErrorResponse(BaseModel):
