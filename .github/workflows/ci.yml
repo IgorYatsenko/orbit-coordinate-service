@@ -27,7 +27,7 @@ jobs:
         run: cp .env.example .env
       - name: Run integration tests on isolated PostgreSQL and Redis
         run: docker compose --profile test run --build --rm tests poetry run pytest tests/integration
-      - name: Verify application startup
+      - name: Verify startup and documented HTTP examples
         run: |
           docker compose up --build --wait
           poetry run poe add-test-user
@@ -49,6 +49,20 @@ jobs:
           with urllib.request.urlopen(request, timeout=5) as response:
               login = json.load(response)
           assert login["token_type"] == "bearer" and login["access_token"]
+          for path in ("examples/request-tle.json", "examples/request-omm.json"):
+              with open(path, "rb") as stream:
+                  request = urllib.request.Request(
+                      "http://localhost:8000/api/v1/orbits/coordinates",
+                      data=stream.read(),
+                      headers={
+                          "Content-Type": "application/json",
+                          "Authorization": "Bearer " + login["access_token"],
+                      },
+                  )
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  result = json.load(response)
+              assert result["reference_frame"] == "WGS84" and result["point_count"] == 61
+              assert len(result["points"]) == 61
           PY
       - name: Show container logs on failure
         if: failure()
