@@ -5,10 +5,9 @@ import httpx
 import pytest
 
 from api.main import Application
-from api.orbits.worker import CalculationResult
 from api.settings import _Settings
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable, OrbitCalculationError
-from models.pydantic import CoordinateRequest, RequestValidationErrorResponse
+from models.pydantic import CalculationResult, CoordinateRequest, RequestValidationErrorResponse
 
 
 async def test_point_limit_is_checked_before_submitting_work(
@@ -68,6 +67,18 @@ async def test_openapi_documents_both_validation_and_calculation_errors(omm_requ
     assert detail.detail[0].loc == ["body", "step_seconds"]
     errors = schema["paths"]["/api/v1/orbits/coordinates"]["post"]["responses"]["422"]
     assert len(errors["content"]["application/json"]["schema"]["anyOf"]) == 2
+
+
+@pytest.mark.parametrize(("name", "fixture_name"), [("tle", "tle_request"), ("omm", "omm_request")])
+async def test_openapi_examples_match_documented_requests(
+    request: pytest.FixtureRequest, name: str, fixture_name: str
+) -> None:
+    app = Application(settings=_Settings())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        schema = (await client.get("/openapi.json")).json()
+    content = schema["paths"]["/api/v1/orbits/coordinates"]["post"]["requestBody"]["content"]["application/json"]
+    sample = CoordinateRequest.model_validate(content["examples"][name]["value"])
+    assert sample == request.getfixturevalue(fixture_name)
 
 
 @pytest.mark.parametrize("value", ["1e999", "-1e999", "NaN", "Infinity"])

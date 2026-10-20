@@ -7,10 +7,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from api.orbits.worker import CalculationResult
 from api.services.compute import Compute
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable
-from models.pydantic import CoordinateRequest
+from models.pydantic import CalculationResult, CoordinateRequest
 
 
 class ControlledExecutor:
@@ -74,12 +73,12 @@ async def test_cancel_or_timeout_retains_slot_until_process_completion(
     assert await compute.ping() is True  # A busy, functioning pool remains ready.
     with pytest.raises(ComputeBusy):
         await compute.calculate(omm_request)
-    executor.pending[-1].set_result(CalculationResult(b"{}", 1, 0.01))
+    executor.pending[-1].set_result(CalculationResult(payload=b"{}", point_count=1, duration_sec=0.01))
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     next_task = asyncio.create_task(compute.calculate(omm_request))
     await asyncio.sleep(0)
-    executor.pending[-1].set_result(CalculationResult(b"{}", 1, 0.01))
+    executor.pending[-1].set_result(CalculationResult(payload=b"{}", point_count=1, duration_sec=0.01))
     assert (await next_task).point_count == 1
 
 

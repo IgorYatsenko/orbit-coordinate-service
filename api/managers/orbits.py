@@ -1,8 +1,7 @@
 import logging
 
-from api.orbits.worker import CalculationResult
 from api.services.compute import Compute
-from models.pydantic import CoordinateRequest
+from models.pydantic import CalculationResult, CoordinateRequest
 
 logger = logging.getLogger(__name__)
 

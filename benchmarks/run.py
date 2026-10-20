@@ -7,68 +7,15 @@ import statistics
 import sys
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
-from pathlib import Path
 from time import perf_counter
-from typing import Literal
 
 import httpx
-from pydantic import BaseModel, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from api.orbits.worker import configure_numeric_threads, run_calculation
+from api.orbits.worker import CalculationWorker
 from api.settings import get_settings
+from benchmarks.settings import BenchmarkSettings
 from models.pydantic import CoordinateRequest
-
-
-class BenchmarkSettings(BaseSettings):
-    APP_BENCH_MODE: Literal["core", "http"] = Field(default="http", description="Direct worker or HTTP measurement.")
-    APP_BENCH_BASE_URL: str = Field(default="http://127.0.0.1:8000", description="Running API URL.")
-    APP_BENCH_INPUT: Path = Field(default=Path("examples/request-omm.json"), description="Fixed input request file.")
-    APP_BENCH_OUTPUT: Path = Field(
-        default=Path("artifacts/benchmark.json"), description="Machine-readable report file."
-    )
-    APP_BENCH_REPETITIONS: int = Field(default=5, ge=1, description="Sequential repetitions per scenario.")
-    APP_BENCH_CONCURRENCY: int = Field(default=4, ge=1, description="Simultaneous requests in the day/1s burst.")
-    APP_BENCH_TIMEOUT_SEC: float = Field(default=60, gt=0, description="Client timeout per HTTP operation.")
-    APP_BENCH_HEALTH_INTERVAL_SEC: float = Field(
-        default=0.05, gt=0, description="Delay between pairs of health probes."
-    )
-
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", frozen=True)
-
-
-class Sample(BaseModel):
-    status: int
-    elapsed_sec: float
-    compute_sec: float | None
-    response_bytes: int
-    worker_peak_rss_bytes: int | None = None
-
-
-class Scenario(BaseModel):
-    name: str
-    point_count: int
-    samples: list[Sample]
-
-
-class HealthSample(BaseModel):
-    path: str
-    status: int
-    elapsed_sec: float
-
-
-class Report(BaseModel):
-    recorded_at: datetime
-    mode: str
-    python: str
-    platform: str
-    cpu_count: int | None
-    dependencies: dict[str, str]
-    input_sha256: str
-    compute_settings: dict[str, int | float]
-    benchmark_settings: BenchmarkSettings
-    scenarios: list[Scenario]
-    health: list[HealthSample]
+from models.pydantic.benchmarks import BenchmarkHealthSample, BenchmarkReport, BenchmarkSample, BenchmarkScenario
 
 
 def _scenarios(request: CoordinateRequest) -> list[tuple[str, CoordinateRequest]]:
@@ -79,7 +26,7 @@ def _scenarios(request: CoordinateRequest) -> list[tuple[str, CoordinateRequest]
     return result
 
 
-def _print_scenario(scenario: Scenario) -> None:
+def _print_scenario(scenario: BenchmarkScenario) -> None:
     successful = [sample for sample in scenario.samples if sample.status == 200]
     if successful:
         timings = sorted(sample.elapsed_sec * 1000 for sample in successful)
@@ -92,18 +39,20 @@ def _print_scenario(scenario: Scenario) -> None:
         print(f"{scenario.name}: no successful responses")
 
 
-def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> list[Scenario]:
+def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> list[BenchmarkScenario]:
     config = get_settings()
-    configure_numeric_threads(config.APP_COMPUTE_NUMERIC_THREADS)
-    run_calculation(CoordinateRequest.model_validate({**request.model_dump(), "end": request.start}), 1)
+    worker = CalculationWorker(
+        chunk_points=config.APP_COMPUTE_CHUNK_POINTS, numeric_threads=config.APP_COMPUTE_NUMERIC_THREADS
+    )
+    worker.run(CoordinateRequest.model_validate({**request.model_dump(), "end": request.start}))
     scenarios = []
     for name, payload in _scenarios(request):
         samples = []
         for _ in range(settings.APP_BENCH_REPETITIONS):
             started = perf_counter()
-            result = run_calculation(payload, config.APP_COMPUTE_CHUNK_POINTS)
+            result = worker.run(payload)
             samples.append(
-                Sample(
+                BenchmarkSample(
                     status=200,
                     elapsed_sec=perf_counter() - started,
                     compute_sec=result.duration_sec,
@@ -111,13 +60,13 @@ def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> lis
                     worker_peak_rss_bytes=result.peak_rss_bytes,
                 )
             )
-        scenario = Scenario(name=name, point_count=payload.point_count, samples=samples)
+        scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=samples)
         _print_scenario(scenario)
         scenarios.append(scenario)
     return scenarios
 
 
-async def _send(client: httpx.AsyncClient, request: CoordinateRequest) -> Sample:
+async def _send(client: httpx.AsyncClient, request: CoordinateRequest) -> BenchmarkSample:
     started = perf_counter()
     response = await client.post(
         "/api/v1/orbits/coordinates", content=request.model_dump_json(), headers={"Content-Type": "application/json"}
@@ -125,18 +74,20 @@ async def _send(client: httpx.AsyncClient, request: CoordinateRequest) -> Sample
     elapsed = perf_counter() - started
     timing = response.headers.get("server-timing")
     compute = float(timing.partition("dur=")[2]) / 1000 if timing else None
-    return Sample(
+    return BenchmarkSample(
         status=response.status_code, elapsed_sec=elapsed, compute_sec=compute, response_bytes=len(response.content)
     )
 
 
 async def _monitor_health(
-    client: httpx.AsyncClient, stopped: asyncio.Event, interval: float, samples: list[HealthSample]
+    client: httpx.AsyncClient, stopped: asyncio.Event, interval: float, samples: list[BenchmarkHealthSample]
 ) -> None:
     async def probe(path: str) -> None:
         started = perf_counter()
         response = await client.get(path)
-        samples.append(HealthSample(path=path, status=response.status_code, elapsed_sec=perf_counter() - started))
+        samples.append(
+            BenchmarkHealthSample(path=path, status=response.status_code, elapsed_sec=perf_counter() - started)
+        )
 
     while not stopped.is_set():
         await asyncio.gather(probe("/health/live"), probe("/health/ready"))
@@ -149,8 +100,8 @@ async def _monitor_health(
 
 async def measure_http(
     settings: BenchmarkSettings, request: CoordinateRequest
-) -> tuple[list[Scenario], list[HealthSample]]:
-    health: list[HealthSample] = []
+) -> tuple[list[BenchmarkScenario], list[BenchmarkHealthSample]]:
+    health: list[BenchmarkHealthSample] = []
     async with httpx.AsyncClient(
         base_url=settings.APP_BENCH_BASE_URL, timeout=settings.APP_BENCH_TIMEOUT_SEC
     ) as client:
@@ -163,12 +114,14 @@ async def measure_http(
         try:
             for name, payload in _scenarios(request):
                 samples = [await _send(client, payload) for _ in range(settings.APP_BENCH_REPETITIONS)]
-                scenario = Scenario(name=name, point_count=payload.point_count, samples=samples)
+                scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=samples)
                 scenarios.append(scenario)
                 _print_scenario(scenario)
             _, payload = _scenarios(request)[-1]
             burst = await asyncio.gather(*(_send(client, payload) for _ in range(settings.APP_BENCH_CONCURRENCY)))
-            scenario = Scenario(name="concurrent_24h_step_1s", point_count=payload.point_count, samples=list(burst))
+            scenario = BenchmarkScenario(
+                name="concurrent_24h_step_1s", point_count=payload.point_count, samples=list(burst)
+            )
             scenarios.append(scenario)
             _print_scenario(scenario)
         finally:
@@ -187,7 +140,7 @@ def main() -> None:
         if settings.APP_BENCH_MODE == "core"
         else asyncio.run(measure_http(settings, request))
     )
-    report = Report(
+    report = BenchmarkReport(
         recorded_at=datetime.now(UTC),
         mode=settings.APP_BENCH_MODE,
         python=sys.version,

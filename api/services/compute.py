@@ -5,10 +5,10 @@ from collections.abc import Callable
 from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 
-from api.orbits.worker import CalculationResult, initialize_worker, probe_worker, run_calculation
+from api.orbits.worker import CalculationWorker
 from api.services.base import BaseService
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable
-from models.pydantic import CoordinateRequest
+from models.pydantic import CalculationResult, CoordinateRequest
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +47,15 @@ class Compute(BaseService):
         self._executor = ProcessPoolExecutor(
             max_workers=self._workers,
             mp_context=context,
-            initializer=initialize_worker,
-            initargs=(self._numeric_threads, context.Barrier(self._workers), self._start_timeout_sec),
+            initializer=CalculationWorker.initialize,
+            initargs=(
+                self._chunk_points,
+                self._numeric_threads,
+                context.Barrier(self._workers),
+                self._start_timeout_sec,
+            ),
         )
-        probes = [self._submit(probe_worker) for _ in range(self._workers)]
+        probes = [self._submit(CalculationWorker.probe) for _ in range(self._workers)]
         async with asyncio.timeout(self._start_timeout_sec):
             await asyncio.gather(*(asyncio.shield(probe) for probe in probes))
         self._ready = True
@@ -95,7 +100,7 @@ class Compute(BaseService):
     async def calculate(self, request: CoordinateRequest) -> CalculationResult:
         if not self._ready:
             raise ComputeUnavailable("Calculation pool is not ready")
-        future = self._submit(run_calculation, request, self._chunk_points)
+        future = self._submit(CalculationWorker.execute, request)
         try:
             async with asyncio.timeout(self._timeout_sec):
                 return await asyncio.shield(future)
@@ -113,7 +118,7 @@ class Compute(BaseService):
             return True
         try:
             if self._health_probe is None:
-                self._health_probe = self._submit(probe_worker)
+                self._health_probe = self._submit(CalculationWorker.probe)
             future = self._health_probe
             async with asyncio.timeout(self._healthcheck_timeout_sec):
                 await asyncio.shield(future)

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from skyfield.framelib import itrs
 
-from api.orbits.core import build_satellite, calculate_coordinates
+from api.orbits.core import OrbitCalculator
 from models.exceptions import OrbitCalculationError
 from models.pydantic import CoordinateRequest, OMMOrbit, TLEOrbit
 
@@ -28,7 +28,7 @@ def test_vallado_teme_reference_vectors(
         line1="1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
         line2="2 00005  34.2682 348.7242 1859667 331.7664  19.3264 10.82419157413667",
     )
-    satellite = build_satellite(orbit)
+    satellite = OrbitCalculator(chunk_points=64).build_satellite(orbit)
     error, position, velocity = satellite.model.sgp4_tsince(minutes)
     assert error == 0
     np.testing.assert_allclose(position, expected_position, rtol=0, atol=1e-7)
@@ -38,8 +38,8 @@ def test_vallado_teme_reference_vectors(
 def test_celestrak_tle_and_json_agree_with_rounding_tolerance(
     tle_request: CoordinateRequest, omm_request: CoordinateRequest
 ) -> None:
-    tle = calculate_coordinates(tle_request, chunk_points=17)
-    omm = calculate_coordinates(omm_request, chunk_points=64)
+    tle = OrbitCalculator(chunk_points=17).calculate(tle_request)
+    omm = OrbitCalculator(chunk_points=64).calculate(omm_request)
     assert tle.epoch == omm.epoch
     assert tle.point_count == omm.point_count == 61
     for first, second in zip(tle.points, omm.points, strict=True):
@@ -55,7 +55,7 @@ def test_deep_space_reference_before_epoch() -> None:
         line1="1 04632U 70093B   04031.91070959 -.00000084  00000-0  10000-3 0  9955",
         line2="2 04632  11.4628 273.1101 1450506 207.6000 143.9350  1.20231981 44145",
     )
-    satellite = build_satellite(orbit)
+    satellite = OrbitCalculator(chunk_points=64).build_satellite(orbit)
     error, position, velocity = satellite.model.sgp4_tsince(-5184)
     assert error == 0
     np.testing.assert_allclose(position, (-29020.02587128, 13819.84419063, -5713.33679183), rtol=0, atol=1e-7)
@@ -63,8 +63,8 @@ def test_deep_space_reference_before_epoch() -> None:
 
 
 def test_wgs84_output_reconstructs_the_earth_fixed_position(omm_request: CoordinateRequest) -> None:
-    response = calculate_coordinates(omm_request, chunk_points=16)
-    satellite = build_satellite(omm_request.orbit)
+    response = OrbitCalculator(chunk_points=16).calculate(omm_request)
+    satellite = OrbitCalculator(chunk_points=64).build_satellite(omm_request.orbit)
     for point in response.points[::15]:
         time = satellite.epoch.ts.from_datetime(point.time)
         expected = satellite.at(time).frame_xyz(itrs).km
@@ -88,7 +88,7 @@ def test_calculation_supports_past_future_and_single_point(omm_request: Coordina
     for offset in (-1, 0, 1):
         time = orbit.elements.EPOCH + timedelta(days=offset)
         request = CoordinateRequest.model_validate({**omm_request.model_dump(), "start": time, "end": time})
-        response = calculate_coordinates(request, chunk_points=4096)
+        response = OrbitCalculator(chunk_points=4096).calculate(request)
         assert response.point_count == 1
         assert response.points[0].time == time
 
@@ -97,8 +97,8 @@ def test_large_json_catalog_number_preserves_identity_and_coordinates(omm_reques
     fields = omm_request.model_dump()
     fields["orbit"]["elements"]["NORAD_CAT_ID"] = 999_999_999
     large = CoordinateRequest.model_validate(fields)
-    expected = calculate_coordinates(omm_request, chunk_points=64)
-    response = calculate_coordinates(large, chunk_points=64)
+    expected = OrbitCalculator(chunk_points=64).calculate(omm_request)
+    response = OrbitCalculator(chunk_points=64).calculate(large)
     assert response.norad_id == 999_999_999
     assert response.points == expected.points
 
@@ -108,7 +108,7 @@ def test_decayed_orbit_fails_whole_calculation_with_time(omm_request: Coordinate
     fields["orbit"]["elements"]["MEAN_MOTION"] = 20.0
     request = CoordinateRequest.model_validate(fields)
     with pytest.raises(OrbitCalculationError, match="SGP4") as caught:
-        calculate_coordinates(request, chunk_points=64)
+        OrbitCalculator(chunk_points=64).calculate(request)
     assert caught.value.time == request.start
 
 
@@ -123,7 +123,7 @@ def test_non_finite_transformed_point_rejects_the_whole_result(
     geographic.elevation.km[2] = value
     monkeypatch.setattr("api.orbits.core.wgs84.geographic_position_of", lambda _: geographic)
     with pytest.raises(OrbitCalculationError, match="non-finite") as caught:
-        calculate_coordinates(omm_request, chunk_points=64)
+        OrbitCalculator(chunk_points=64).calculate(omm_request)
     assert caught.value.time == omm_request.start + timedelta(seconds=2 * omm_request.step_seconds)
 
 
@@ -134,4 +134,4 @@ def test_non_leap_tle_epoch_cannot_roll_into_next_year(tle_request: CoordinateRe
     fields["line1"] = body + str(checksum)
     orbit = TLEOrbit.model_validate(fields)
     with pytest.raises(OrbitCalculationError, match="outside their supported ranges"):
-        build_satellite(orbit)
+        OrbitCalculator(chunk_points=64).build_satellite(orbit)

@@ -1,9 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Response, status
 
 from api.dependencies import get_orbit_manager
 from api.managers.orbits import OrbitManager
+from api.router.examples import COORDINATE_EXAMPLES
 from models import pydantic
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable, OrbitCalculationError
 
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/api/v1/orbits", tags=["Orbits"])
     summary="Calculate a WGS84 trajectory from TLE or CelesTrak GP JSON",
 )
 async def coordinates(
-    request: pydantic.CoordinateRequest,
+    request: Annotated[pydantic.CoordinateRequest, Body(openapi_examples=COORDINATE_EXAMPLES)],
     manager: Annotated[OrbitManager, Depends(get_orbit_manager)],
 ) -> Response:
     if request.point_count > manager.max_points:
