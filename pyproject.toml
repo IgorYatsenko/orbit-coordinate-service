@@ -1,6 +1,6 @@
 [project]
 name = "orbit-coordinate-service"
-version = "0.3.2"
+version = "1.0.0"
 description = "A satellite coordinate calculation service and metadata registry."
 authors = []
 readme = "README.md"
@@ -79,7 +79,7 @@ benchmark = "python -m benchmarks.run"
 check = ["lint", "format-check", "typecheck", "test-unit"]
 
 [tool.poe.tasks.create-migration]
-cmd = "alembic revision --autogenerate -m ${message}"
+cmd = 'alembic revision --autogenerate -m "${message}"'
 args = [{ name = "message", options = ["-m"], required = true }]
 
 [tool.poe.tasks.add-test-user]

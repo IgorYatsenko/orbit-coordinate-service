@@ -32,10 +32,6 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, from_attributes=True)
 
 
-class AuthenticatedUser(UserResponse):
-    token_version: int = Field(ge=0, strict=True)
-
-
 class TokenResponse(BaseModel):
     access_token: str = Field(repr=False)
     token_type: Literal["bearer"] = "bearer"
@@ -46,7 +42,6 @@ class TokenResponse(BaseModel):
 
 class TokenClaims(BaseModel):
     sub: UUID
-    ver: int = Field(ge=0, strict=True)
     iat: int = Field(ge=0, strict=True)
     exp: int = Field(ge=0, strict=True)
     iss: str

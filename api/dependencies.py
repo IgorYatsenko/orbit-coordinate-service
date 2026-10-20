@@ -9,7 +9,7 @@ from api.managers.orbits import OrbitManager
 from api.managers.satellites import SatelliteManager
 from api.services import Services
 from models.exceptions.access import AuthenticationFailed
-from models.pydantic.auth import AuthenticatedUser
+from models.pydantic.auth import UserResponse
 
 bearer = HTTPBearer(auto_error=False, description="Obtain a token with POST /api/v1/auth/login, then paste it here.")
 
@@ -38,7 +38,7 @@ def get_auth_manager(request: Request) -> AuthManager:
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
     manager: Annotated[AuthManager, Depends(get_auth_manager)],
-) -> AuthenticatedUser:
+) -> UserResponse:
     if credentials is None:
         raise AuthenticationFailed()
     return await manager.authenticate(credentials.credentials)

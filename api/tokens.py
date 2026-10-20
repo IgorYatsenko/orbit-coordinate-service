@@ -1,11 +1,12 @@
 from datetime import UTC, datetime
+from uuid import UUID
 
 import jwt
 from pydantic import ValidationError
 
 from api.settings import _Settings
 from models.exceptions.access import AuthenticationFailed
-from models.pydantic.auth import AuthenticatedUser, TokenClaims, TokenResponse
+from models.pydantic.auth import TokenClaims, TokenResponse
 
 
 class Tokens:
@@ -15,11 +16,9 @@ class Tokens:
         self._issuer = config.APP_AUTH_TOKEN_ISSUER
         self._audience = config.APP_AUTH_TOKEN_AUDIENCE
 
-    def issue(self, user: AuthenticatedUser) -> TokenResponse:
+    def issue(self, user_id: UUID) -> TokenResponse:
         now = int(datetime.now(UTC).timestamp())
-        claims = TokenClaims(
-            sub=user.id, ver=user.token_version, iat=now, exp=now + self._ttl_sec, iss=self._issuer, aud=self._audience
-        )
+        claims = TokenClaims(sub=user_id, iat=now, exp=now + self._ttl_sec, iss=self._issuer, aud=self._audience)
         return TokenResponse(
             access_token=jwt.encode(claims.model_dump(mode="json"), self._secret, algorithm="HS256"),
             expires_in=self._ttl_sec,
@@ -33,7 +32,7 @@ class Tokens:
                 algorithms=["HS256"],
                 audience=self._audience,
                 issuer=self._issuer,
-                options={"require": ["sub", "ver", "iat", "exp", "iss", "aud"]},
+                options={"require": ["sub", "iat", "exp", "iss", "aud"]},
             )
             return TokenClaims.model_validate(payload)
         except (jwt.InvalidTokenError, ValidationError) as exc:

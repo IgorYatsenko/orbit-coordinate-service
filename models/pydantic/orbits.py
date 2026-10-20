@@ -19,6 +19,13 @@ def _iso_datetime(value: object) -> object:
     return value
 
 
+def _utc_datetime(value: datetime) -> datetime:
+    try:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    except OverflowError as error:
+        raise ValueError("Datetime is outside years 1..9999 after UTC conversion") from error
+
+
 RequestTime = Annotated[AwareDatetime, BeforeValidator(_iso_datetime)]
 Angle = Annotated[StrictFloat, Field(ge=0, lt=360)]
 FiniteFloat = Annotated[StrictFloat, Field(allow_inf_nan=False)]
@@ -88,7 +95,7 @@ class GPElements(BaseModel):
     @field_validator("EPOCH")
     @classmethod
     def epoch_to_utc(cls, value: datetime) -> datetime:
-        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+        return _utc_datetime(value)
 
 
 class OMMOrbit(BaseModel):
@@ -109,7 +116,7 @@ class CoordinateRequest(BaseModel):
     @field_validator("start", "end")
     @classmethod
     def normalize_time(cls, value: datetime) -> datetime:
-        return value.astimezone(UTC)
+        return _utc_datetime(value)
 
     @model_validator(mode="after")
     def validate_interval(self) -> Self:

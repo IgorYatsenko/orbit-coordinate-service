@@ -103,3 +103,24 @@ async def test_non_finite_input_returns_validation_error(omm_request: Coordinate
     validation = RequestValidationErrorResponse.model_validate(response.json())
     assert validation.detail[0].loc == ["body", "orbit", "omm", "elements", "BSTAR"]
     assert "input" not in response.json()["detail"][0]
+
+
+@pytest.mark.parametrize("time", ["0001-01-01T00:00:00+01:00", "9999-12-31T23:59:59-01:00"])
+@pytest.mark.parametrize("field", ["start", "end", "EPOCH"])
+async def test_utc_overflow_returns_a_field_validation_error(
+    omm_request: CoordinateRequest, field: str, time: str
+) -> None:
+    app = authorized_application(settings=_Settings())
+    fields = omm_request.model_dump(mode="json")
+    if field == "EPOCH":
+        fields["orbit"]["elements"][field] = time
+    else:
+        fields[field] = time
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/api/v1/orbits/coordinates", json=fields)
+    assert response.status_code == 422
+    validation = RequestValidationErrorResponse.model_validate(response.json())
+    expected = ["body", "orbit", "omm", "elements", field] if field == "EPOCH" else ["body", field]
+    assert validation.detail[0].loc == expected
+    assert "UTC conversion" in validation.detail[0].msg

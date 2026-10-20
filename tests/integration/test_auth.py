@@ -55,34 +55,16 @@ async def test_unknown_user_and_wrong_password_have_identical_responses(
     assert "input" not in invalid.json()["detail"][0]
 
 
-async def test_database_access_changes_revoke_existing_tokens(
+async def test_disabled_user_cannot_use_existing_token_or_sign_in(
     application: Application, client: httpx.AsyncClient, user_credentials: LoginRequest
 ) -> None:
-    new_credentials = LoginRequest(username="reviewer", password="a-new-test-password")
-    encoded = await application.services.passwords.hash(new_credentials.password.get_secret_value())
-    async with application.services.database.session() as session:
-        await session.execute(
-            update(User)
-            .where(User.username == "reviewer")
-            .values(password_hash=encoded, token_version=User.token_version + 1)
-        )
-    assert (await client.get("/api/v1/auth/me")).status_code == 401
-    login = await client.post(
-        "/api/v1/auth/login", json={"username": "reviewer", "password": user_credentials.password.get_secret_value()}
-    )
-    assert login.status_code == 401
-    new_login = await client.post(
-        "/api/v1/auth/login", json={"username": "reviewer", "password": new_credentials.password.get_secret_value()}
-    )
-    assert new_login.status_code == 200
-    client.headers["Authorization"] = f"Bearer {new_login.json()['access_token']}"
-    assert (await client.get("/api/v1/auth/me")).status_code == 200
     async with application.services.database.session() as session:
         await session.execute(update(User).where(User.username == "reviewer").values(is_active=False))
     assert (await client.get("/api/v1/auth/me")).status_code == 401
     assert (
         await client.post(
-            "/api/v1/auth/login", json={"username": "reviewer", "password": new_credentials.password.get_secret_value()}
+            "/api/v1/auth/login",
+            json={"username": "reviewer", "password": user_credentials.password.get_secret_value()},
         )
     ).status_code == 401
 
