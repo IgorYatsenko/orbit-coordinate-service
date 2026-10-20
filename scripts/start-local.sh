@@ -18,4 +18,4 @@ if [ "${1:-}" = "--init-only" ]; then
     exit 0
 fi
 docker compose up --build --wait "$@"
-printf '\nCreate an account: docker compose exec app python -m api.cli create-user reviewer\n'
+docker compose exec -T app python -m dev.main

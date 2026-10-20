@@ -4,11 +4,11 @@ import httpx
 import pytest
 
 from api.main import Application
-from api.managers.users import UserManager
 from api.services.redis import Redis
 from api.settings import _Settings
+from dev.project_user import create_user_setup
 from models.exceptions.access import RateLimitExceeded, RedisUnavailable
-from models.pydantic.auth import UserCredentials
+from models.pydantic.auth import LoginRequest
 
 pytestmark = pytest.mark.integration
 
@@ -26,7 +26,7 @@ def app_settings(app_settings: _Settings) -> _Settings:
 
 
 async def test_user_limit_is_shared_by_tokens_but_isolated_between_users(
-    application: Application, client: httpx.AsyncClient, user_credentials: UserCredentials
+    application: Application, client: httpx.AsyncClient, user_credentials: LoginRequest
 ) -> None:
     login = await client.post(
         "/api/v1/auth/login", json={"username": "reviewer", "password": user_credentials.password.get_secret_value()}
@@ -38,9 +38,8 @@ async def test_user_limit_is_shared_by_tokens_but_isolated_between_users(
     assert rejected.status_code == 429
     assert rejected.json()["detail"]["code"] == "rate_limit_exceeded"
     assert int(rejected.headers["retry-after"]) == 1
-    manager = UserManager(database=application.services.database, passwords=application.services.passwords)
-    other = UserCredentials(username="other-user", password="another-test-password")
-    await manager.create(other)
+    other = LoginRequest(username="other-user", password="another-test-password")
+    assert await create_user_setup(services=application.services, credentials=other)
     second = await client.post(
         "/api/v1/auth/login", json={"username": other.username, "password": other.password.get_secret_value()}
     )

@@ -1,13 +1,15 @@
+import asyncio
+
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from api.main import Application
-from api.managers.users import UserManager
 from api.services import Services
 from api.settings import _Settings
+from dev.project_user import create_user_setup
 from models.exceptions.access import DatabaseUnavailable
-from models.pydantic.auth import UserCredentials
+from models.pydantic.auth import LoginRequest
 from models.sqlalchemy import User
 
 pytestmark = pytest.mark.integration
@@ -17,7 +19,7 @@ async def test_login_and_current_user_do_not_expose_secrets(
     application: Application,
     anonymous_client: httpx.AsyncClient,
     registered_user: None,
-    user_credentials: UserCredentials,
+    user_credentials: LoginRequest,
 ) -> None:
     response = await anonymous_client.post(
         "/api/v1/auth/login", json={"username": " REVIEWER ", "password": user_credentials.password.get_secret_value()}
@@ -50,12 +52,17 @@ async def test_unknown_user_and_wrong_password_have_identical_responses(
     assert "input" not in invalid.json()["detail"][0]
 
 
-async def test_password_reset_and_disable_revoke_existing_tokens(
-    application: Application, client: httpx.AsyncClient, user_credentials: UserCredentials
+async def test_database_access_changes_revoke_existing_tokens(
+    application: Application, client: httpx.AsyncClient, user_credentials: LoginRequest
 ) -> None:
-    manager = UserManager(database=application.services.database, passwords=application.services.passwords)
-    new_credentials = UserCredentials(username="reviewer", password="a-new-test-password")
-    await manager.set_password(new_credentials)
+    new_credentials = LoginRequest(username="reviewer", password="a-new-test-password")
+    encoded = await application.services.passwords.hash(new_credentials.password.get_secret_value())
+    async with application.services.database.session() as session:
+        await session.execute(
+            update(User)
+            .where(User.username == "reviewer")
+            .values(password_hash=encoded, token_version=User.token_version + 1)
+        )
     assert (await client.get("/api/v1/auth/me")).status_code == 401
     login = await client.post(
         "/api/v1/auth/login", json={"username": "reviewer", "password": user_credentials.password.get_secret_value()}
@@ -67,7 +74,9 @@ async def test_password_reset_and_disable_revoke_existing_tokens(
     assert new_login.status_code == 200
     client.headers["Authorization"] = f"Bearer {new_login.json()['access_token']}"
     assert (await client.get("/api/v1/auth/me")).status_code == 200
-    await manager.disable("reviewer")
+    async with application.services.database.session() as session:
+        await session.execute(update(User).where(User.username == "reviewer").values(is_active=False))
+    assert await create_user_setup(services=application.services, credentials=new_credentials) is False
     assert (await client.get("/api/v1/auth/me")).status_code == 401
     assert (
         await client.post(
@@ -76,14 +85,29 @@ async def test_password_reset_and_disable_revoke_existing_tokens(
     ).status_code == 401
 
 
-async def test_duplicate_username_rolls_back_and_allows_next_transaction(
-    application: Application, registered_user: None, user_credentials: UserCredentials
+async def test_demo_setup_preserves_existing_user_and_password(
+    application: Application, client: httpx.AsyncClient, user_credentials: LoginRequest
 ) -> None:
-    manager = UserManager(database=application.services.database, passwords=application.services.passwords)
-    with pytest.raises(ValueError, match="already exists"):
-        await manager.create(user_credentials)
-    result = await manager.create(UserCredentials(username="second-user", password="another-test-password"))
-    assert result.username == "second-user"
+    original = (await client.get("/api/v1/auth/me")).json()
+    changed = LoginRequest(username=user_credentials.username, password="not-the-original-password")
+    assert await create_user_setup(services=application.services, credentials=changed) is False
+    assert (await client.get("/api/v1/auth/me")).json() == original
+    for credentials, expected in ((user_credentials, 200), (changed, 401)):
+        result = await client.post(
+            "/api/v1/auth/login",
+            json={"username": credentials.username, "password": credentials.password.get_secret_value()},
+        )
+        assert result.status_code == expected
+
+
+async def test_concurrent_demo_setup_creates_one_user(application: Application, user_credentials: LoginRequest) -> None:
+    results = await asyncio.gather(
+        *(create_user_setup(services=application.services, credentials=user_credentials) for _ in range(2))
+    )
+    assert sorted(results) == [False, True]
+    async with application.services.database.session() as session:
+        rows = list(await session.scalars(select(User).where(User.username == user_credentials.username)))
+    assert len(rows) == 1
 
 
 async def test_database_connection_refusal_returns_safe_503(
