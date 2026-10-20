@@ -1,3 +1,4 @@
+from models.pydantic.calculations import CalculationResult
 from models.pydantic.health import ReadinessResponse, ServiceInfoResponse
 from models.pydantic.orbits import (
     CalculationErrorDetail,
@@ -12,6 +13,7 @@ from models.pydantic.orbits import (
 )
 
 __all__ = [
+    "CalculationResult",
     "CalculationErrorDetail",
     "CalculationErrorResponse",
     "CoordinatePoint",

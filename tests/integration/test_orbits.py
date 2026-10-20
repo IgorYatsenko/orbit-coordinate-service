@@ -17,7 +17,12 @@ async def test_real_process_http_calculation(
     client: httpx.AsyncClient, request: pytest.FixtureRequest, fixture_name: str
 ) -> None:
     payload: CoordinateRequest = request.getfixturevalue(fixture_name)
-    response = await client.post("/api/v1/orbits/coordinates", json=payload.model_dump(mode="json"))
+    schema = (await client.get("/openapi.json")).json()
+    content = schema["paths"]["/api/v1/orbits/coordinates"]["post"]["requestBody"]["content"]["application/json"]
+    name = fixture_name.removesuffix("_request")
+    example = content["examples"][name]["value"]
+    assert CoordinateRequest.model_validate(example) == payload
+    response = await client.post("/api/v1/orbits/coordinates", json=example)
     assert response.status_code == 200, response.text
     result = CoordinateResponse.model_validate_json(response.content)
     assert result.norad_id == 25544
