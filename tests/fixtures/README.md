@@ -2,6 +2,8 @@
 
 `celestrak/iss.json` and `celestrak/iss.tle` are unmodified responses for ISS (NORAD 25544).
 `celestrak/sources.json` records URLs, UTC retrieval times and SHA-256 hashes.
+Git attributes and pre-commit exclusions preserve their original bytes, including CRLF.
+The source-manifest test also runs after checkout in CI.
 The request files under `examples/` wrap those elements in the API contract.
 Their epoch is 2026-10-20T05:01:14.050560Z. JSON retains slightly more precision than TLE.
 Tests use a 0.0001 degree / 0.001 km agreement tolerance for these two representations.
