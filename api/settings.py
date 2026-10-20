@@ -32,6 +32,16 @@ class _Settings(BaseSettings):
     APP_DB_STATEMENT_TIMEOUT_SEC: float = Field(default=5.0, ge=0.001, description="PostgreSQL statement timeout.")
     APP_DB_HEALTHCHECK_TIMEOUT_SEC: float = Field(default=2.0, gt=0, description="Total database healthcheck timeout.")
 
+    APP_COMPUTE_WORKERS: int = Field(default=2, ge=1, description="Calculation processes per HTTP process.")
+    APP_COMPUTE_MAX_POINTS: int = Field(default=100_000, ge=1, description="Maximum trajectory points per request.")
+    APP_COMPUTE_CHUNK_POINTS: int = Field(default=1024, ge=1, description="Vectorized points per calculation chunk.")
+    APP_COMPUTE_NUMERIC_THREADS: int = Field(
+        default=1, ge=1, description="BLAS/OpenMP threads per calculation process."
+    )
+    APP_COMPUTE_TIMEOUT_SEC: float = Field(default=30.0, gt=0, description="HTTP wait deadline for a calculation.")
+    APP_COMPUTE_START_TIMEOUT_SEC: float = Field(default=30.0, gt=0, description="Calculation pool warmup deadline.")
+    APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC: float = Field(default=2.0, gt=0, description="Idle pool probe deadline.")
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", frozen=True)
 
     @property

@@ -75,8 +75,11 @@ async def migrated_database(engine: AsyncEngine, migration_config: Config) -> No
 @pytest.fixture
 async def database(app_settings: _Settings, migrated_database: None) -> AsyncIterator[PostgreSQL]:
     services = Services(config=app_settings)
-    async with services.lifespan():
+    await services.database.start()
+    try:
         yield services.database
+    finally:
+        await services.database.stop()
 
 
 @pytest.fixture
