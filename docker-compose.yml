@@ -1,0 +1,116 @@
+x-build: &build
+  context: .
+  dockerfile: .deployment/Dockerfile
+  args:
+    PYTHON_IMAGE: ${APP_DEPLOY_PYTHON_IMAGE:-python:3.13.14-slim}
+    POETRY_VERSION: ${APP_DEPLOY_POETRY_VERSION:-2.4.1}
+
+x-app-environment: &app-environment
+  APP_HOST: ${APP_HOST:-0.0.0.0}
+  APP_PORT: ${APP_PORT:-8000}
+  APP_ROOT_PATH: ${APP_ROOT_PATH:-}
+  APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+  APP_DOCS_ENABLED: ${APP_DOCS_ENABLED:-true}
+  APP_HTTP_WORKERS: ${APP_HTTP_WORKERS:-1}
+  APP_HTTP_KEEP_ALIVE_SEC: ${APP_HTTP_KEEP_ALIVE_SEC:-5}
+  APP_SHUTDOWN_TIMEOUT_SEC: ${APP_SHUTDOWN_TIMEOUT_SEC:-15}
+  APP_DB_HOST: postgres
+  APP_DB_PORT: 5432
+  APP_DB_USER: ${APP_DB_USER:-orbits}
+  APP_DB_PASSWORD: ${APP_DB_PASSWORD:-orbits}
+  APP_DB_NAME: ${APP_DB_NAME:-orbits}
+  APP_DB_POOL_SIZE: ${APP_DB_POOL_SIZE:-5}
+  APP_DB_MAX_OVERFLOW: ${APP_DB_MAX_OVERFLOW:-0}
+  APP_DB_POOL_TIMEOUT_SEC: ${APP_DB_POOL_TIMEOUT_SEC:-5}
+  APP_DB_CONNECT_TIMEOUT_SEC: ${APP_DB_CONNECT_TIMEOUT_SEC:-5}
+  APP_DB_STATEMENT_TIMEOUT_SEC: ${APP_DB_STATEMENT_TIMEOUT_SEC:-5}
+  APP_DB_HEALTHCHECK_TIMEOUT_SEC: ${APP_DB_HEALTHCHECK_TIMEOUT_SEC:-2}
+  APP_DEPLOY_HEALTHCHECK_TIMEOUT_SEC: ${APP_DEPLOY_HEALTHCHECK_TIMEOUT_SEC:-3}
+
+x-healthcheck: &healthcheck
+  interval: ${APP_DEPLOY_HEALTHCHECK_INTERVAL_SEC:-5}s
+  timeout: ${APP_DEPLOY_HEALTHCHECK_TIMEOUT_SEC:-3}s
+  start_period: ${APP_DEPLOY_HEALTHCHECK_START_PERIOD_SEC:-10}s
+  retries: ${APP_DEPLOY_HEALTHCHECK_RETRIES:-10}
+
+services:
+  postgres:
+    image: ${APP_DEPLOY_POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: ${APP_DB_USER:-orbits}
+      POSTGRES_PASSWORD: ${APP_DB_PASSWORD:-orbits}
+      POSTGRES_DB: ${APP_DB_NAME:-orbits}
+    ports:
+      - "${APP_DEPLOY_BIND_HOST:-127.0.0.1}:${APP_DB_PORT:-55432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+
+  migrate:
+    build:
+      <<: *build
+      target: runtime
+    environment: *app-environment
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app:
+    build:
+      <<: *build
+      target: runtime
+    environment: *app-environment
+    init: true
+    ports:
+      - "${APP_DEPLOY_BIND_HOST:-127.0.0.1}:${APP_PORT:-8000}:${APP_PORT:-8000}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: ${APP_SHUTDOWN_TIMEOUT_SEC:-15}s
+    healthcheck:
+      <<: *healthcheck
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request;
+          urllib.request.urlopen(
+          'http://127.0.0.1:' + os.environ['APP_PORT'] + '/health/ready',
+          timeout=float(os.environ['APP_DEPLOY_HEALTHCHECK_TIMEOUT_SEC'])).close()
+
+  postgres-test:
+    profiles: ["test"]
+    image: ${APP_DEPLOY_POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: ${APP_TEST_DB_USER:-orbits_test}
+      POSTGRES_PASSWORD: ${APP_TEST_DB_PASSWORD:-orbits_test}
+      POSTGRES_DB: ${APP_TEST_DB_NAME:-orbits_test}
+    ports:
+      - "${APP_DEPLOY_BIND_HOST:-127.0.0.1}:${APP_TEST_DB_PORT:-55433}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+
+  tests:
+    profiles: ["test"]
+    build:
+      <<: *build
+      target: test
+    environment:
+      APP_TEST_DB_HOST: postgres-test
+      APP_TEST_DB_PORT: 5432
+      APP_TEST_DB_USER: ${APP_TEST_DB_USER:-orbits_test}
+      APP_TEST_DB_PASSWORD: ${APP_TEST_DB_PASSWORD:-orbits_test}
+      APP_TEST_DB_NAME: ${APP_TEST_DB_NAME:-orbits_test}
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
