@@ -21,6 +21,8 @@ RUN poetry install --with dev
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY tests ./tests
+COPY examples ./examples
+COPY benchmarks ./benchmarks
 CMD ["poetry", "run", "pytest"]
 
 FROM ${PYTHON_IMAGE} AS runtime

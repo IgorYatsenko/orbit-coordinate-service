@@ -2,8 +2,8 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Текущая версия **0.1.0** содержит инфраструктурное основание: FastAPI, PostgreSQL,
-миграции, health API и проверки качества. Расчёт координат появится в версии 0.2.0.
+Текущая версия **0.2.0** вычисляет траекторию из TLE или CelesTrak GP JSON и возвращает
+широту, долготу и высоту WGS84. Реестр метаданных КА появится в версии 0.3.0.
 
 ## Запуск
 
@@ -22,7 +22,7 @@ Swagger UI доступен по адресу [localhost:8000/docs](http://local
 Пример ответа `/health/ready`:
 
 ```json
-{"status":"ok","version":"0.1.0","database":"ok"}
+{"status":"ok","version":"0.2.0","database":"ok","compute":"ok"}
 ```
 
 Настройки по умолчанию позволяют запустить пример сразу. Для изменения параметров:
@@ -41,6 +41,48 @@ docker compose stop
 ```
 
 `stop` сохраняет рабочие данные PostgreSQL в Docker volume.
+
+## Расчёт координат
+
+Оба запроса используют сохранённые данные МКС из CelesTrak с эпохой
+`2026-10-20T05:01:14.050560Z`. Начало и конец интервала задаются с часовым поясом,
+шаг — целым числом от 1 до 60 секунд. Доступ в интернет для расчёта не нужен.
+
+TLE:
+
+```bash
+curl --fail-with-body -sS http://localhost:8000/api/v1/orbits/coordinates \
+  -H 'Content-Type: application/json' --data-binary @examples/request-tle.json
+```
+
+JSON с орбитальными параметрами:
+
+```bash
+curl --fail-with-body -sS http://localhost:8000/api/v1/orbits/coordinates \
+  -H 'Content-Type: application/json' --data-binary @examples/request-omm.json
+```
+
+Ответ содержит `norad_id`, `epoch`, `reference_frame`, параметры сетки и массив `points`.
+Каждая точка содержит `time`, `latitude_deg`, `longitude_deg`, `altitude_km`.
+Высота измеряется в километрах над эллипсоидом WGS84.
+Полный [контракт API](docs/api.md) объясняет оба формата, ошибки, UTC и правила границ.
+Источники и контрольные суммы входных данных находятся в [тестовых данных](tests/fixtures/README.md).
+
+Свежие элементы можно получить явно:
+
+```bash
+curl --fail -sS 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE'
+curl --fail -sS 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=JSON'
+```
+
+В первом случае две строки переносятся в `orbit.line1` и `orbit.line2`,
+во втором один объект массива — в `orbit.elements`. Устаревшие элементы постепенно
+теряют достоверность; отсутствие ошибки расчёта не обещает точного положения реального КА.
+
+По умолчанию допускается до 100000 точек, два одновременных вычисления на HTTP-процесс.
+При заполнении пула запрос получает `503`; время ожидания ограничено 30 секундами.
+Параметры доступны через `APP_COMPUTE_*`, подробности — в [настройках](docs/configuration.md).
+Первые [замеры](docs/benchmarks.md) содержат условия, команды и ограничения результатов.
 
 ## Разработка на Python
 
@@ -94,20 +136,23 @@ poetry run poe test
   транзакции, запуск ресурсов и рассмотренные альтернативы.
 - [Предметная область](docs/domain.md): КА, TLE, OMM, эпоха, SGP4, WGS72/WGS84 и ограничения точности.
 - [Настройки](docs/configuration.md): все переменные окружения, приоритеты и начальная конфигурация.
+- [Контракт расчёта](docs/api.md): запросы, ответы и ошибки.
+- [Замеры](docs/benchmarks.md): воспроизводимые начальные результаты.
 - [История изменений](CHANGELOG.md).
 
 ```text
 api/router/          HTTP-маршруты и ответы
 api/managers/        координация операций
-api/services/        PostgreSQL и жизненный цикл ресурсов
+api/services/        PostgreSQL, вычислительный пул и жизненный цикл ресурсов
+api/orbits/          численное ядро и процесс вычисления
 api/settings.py      настройки из окружения и .env
 models/pydantic/     модели внешних контрактов
 models/sqlalchemy/   основание ORM-моделей
 migrations/postgres/ миграции Alembic
 tests/unit/          проверки без PostgreSQL
 tests/integration/   проверки с настоящей PostgreSQL
+examples/            готовые запросы TLE и JSON
+benchmarks/          ручные замеры ядра и HTTP
 ```
 
-Каталоги доступа к данным и вычислительного ядра появятся вместе с соответствующим кодом.
-Версия 0.1.0 ещё не выполняет орбитальные расчёты; примеры запросов TLE/JSON появятся
-вместе с endpoint расчёта в 0.2.0.
+Каталог доступа к данным появится вместе с реестром в 0.3.0.

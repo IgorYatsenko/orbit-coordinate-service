@@ -10,11 +10,14 @@ repos:
         args: [--markdown-linebreak-ext=md]
         language: system
         types: [text]
+        # Preserve upstream bytes recorded in sources.json.
+        exclude: ^tests/fixtures/celestrak/iss\.(json|tle)$
       - id: end-of-file-fixer
         name: Fix end of files
         entry: poetry run end-of-file-fixer
         language: system
         types: [text]
+        exclude: ^tests/fixtures/celestrak/iss\.(json|tle)$
       - id: check-merge-conflict
         name: Check merge conflicts
         entry: poetry run check-merge-conflict

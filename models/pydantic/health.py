@@ -14,5 +14,6 @@ class ReadinessResponse(BaseModel):
     status: Literal["ok", "unavailable"]
     version: str
     database: Literal["ok", "unavailable"]
+    compute: Literal["ok", "unavailable"]
 
     model_config = ConfigDict(extra="forbid", frozen=True)
