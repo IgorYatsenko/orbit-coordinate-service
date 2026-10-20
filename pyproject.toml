@@ -1,6 +1,6 @@
 [project]
 name = "orbit-coordinate-service"
-version = "0.3.1"
+version = "0.3.2"
 description = "A satellite coordinate calculation service and metadata registry."
 authors = []
 readme = "README.md"
@@ -52,7 +52,7 @@ max-complexity = 10
 python-version = "3.13"
 
 [tool.ty.src]
-include = ["api", "models", "migrations", "tests", "benchmarks", "dev"]
+include = ["api", "models", "migrations", "tests", "benchmarks"]
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
@@ -81,3 +81,25 @@ check = ["lint", "format-check", "typecheck", "test-unit"]
 [tool.poe.tasks.create-migration]
 cmd = "alembic revision --autogenerate -m ${message}"
 args = [{ name = "message", options = ["-m"], required = true }]
+
+[tool.poe.tasks.add-test-user]
+help = "Create the demonstration user: testuser / test-password."
+cmd = """python -c '
+import asyncio
+from api.db.users import create_if_missing
+from api.services import Services
+from api.settings import get_settings
+
+async def main() -> None:
+    services = Services(config=get_settings())
+    try:
+        await services.database.start()
+        encoded = await services.passwords.hash("test-password")
+        async with services.database.session() as session:
+            user_id = await create_if_missing(session, username="testuser", password_hash=encoded)
+        print("Test user created" if user_id else "Test user already exists")
+    finally:
+        await services.database.stop()
+
+asyncio.run(main())
+'"""

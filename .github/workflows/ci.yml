@@ -24,12 +24,13 @@ jobs:
       - name: Run pre-commit checks and unit tests
         run: poetry run pre-commit run --all-files
       - name: Initialize local configuration
-        run: ./scripts/start-local.sh --init-only
+        run: cp .env.example .env
       - name: Run integration tests on isolated PostgreSQL and Redis
         run: docker compose --profile test run --build --rm tests poetry run pytest tests/integration
       - name: Verify application startup
         run: |
-          ./scripts/start-local.sh
+          docker compose up --build --wait
+          poetry run poe add-test-user
           python - <<'PY'
           import json
           import tomllib
