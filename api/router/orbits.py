@@ -7,6 +7,7 @@ from api.managers.orbits import OrbitManager
 from api.router.examples import COORDINATE_EXAMPLES
 from models import pydantic
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable, OrbitCalculationError
+from models.pydantic.errors import ErrorResponse
 
 router = APIRouter(prefix="/api/v1/orbits", tags=["Orbits"])
 
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/api/v1/orbits", tags=["Orbits"])
         status.HTTP_422_UNPROCESSABLE_CONTENT: {
             "model": pydantic.CalculationErrorResponse | pydantic.RequestValidationErrorResponse
         },
-        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": pydantic.CalculationErrorResponse},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": pydantic.CalculationErrorResponse | ErrorResponse},
     },
     summary="Calculate a WGS84 trajectory from TLE or CelesTrak GP JSON",
 )

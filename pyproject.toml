@@ -1,6 +1,6 @@
 [project]
 name = "orbit-coordinate-service"
-version = "0.2.1"
+version = "0.3.0"
 description = "A satellite coordinate calculation service and metadata registry."
 authors = []
 readme = "README.md"
@@ -16,6 +16,9 @@ dependencies = [
     "skyfield (>=1.55,<2.0)",
     "sgp4 (>=2.27,<3.0)",
     "numpy (>=2.5.4,<3.0.0)",
+    "pyjwt (>=2.15.1,<3.0.0)",
+    "argon2-cffi (>=25.1.0,<26.0.0)",
+    "redis (>=8.1.0,<9.0.0)",
 ]
 
 [tool.poetry]
@@ -56,7 +59,7 @@ addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["integration: requires the dedicated PostgreSQL test database"]
+markers = ["integration: requires dedicated test PostgreSQL and Redis"]
 
 [tool.poe.tasks]
 start = "python -m api"

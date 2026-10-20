@@ -23,7 +23,9 @@ jobs:
           poetry check --lock
       - name: Run pre-commit checks and unit tests
         run: poetry run pre-commit run --all-files
-      - name: Run integration tests on isolated PostgreSQL
+      - name: Initialize local configuration
+        run: ./scripts/start-local.sh --init-only
+      - name: Run integration tests on isolated PostgreSQL and Redis
         run: docker compose --profile test run --build --rm tests poetry run pytest tests/integration
       - name: Verify application startup
         run: |
@@ -37,7 +39,7 @@ jobs:
               version = tomllib.load(stream)["project"]["version"]
           with urllib.request.urlopen("http://localhost:8000/health/ready", timeout=5) as response:
               payload = json.load(response)
-          assert payload == {"status": "ok", "version": version, "database": "ok", "compute": "ok"}, payload
+          assert payload == {"status": "ok", "version": version, "database": "ok", "compute": "ok", "redis": "ok"}, payload
           PY
       - name: Show container logs on failure
         if: failure()

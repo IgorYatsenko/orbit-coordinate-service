@@ -17,6 +17,8 @@ def main() -> None:
         log_level=settings.APP_LOG_LEVEL.lower(),
         timeout_keep_alive=settings.APP_HTTP_KEEP_ALIVE_SEC,
         timeout_graceful_shutdown=settings.APP_SHUTDOWN_TIMEOUT_SEC,
+        proxy_headers=bool(settings.APP_HTTP_TRUSTED_PROXY_IPS),
+        forwarded_allow_ips=settings.APP_HTTP_TRUSTED_PROXY_IPS,
     )
 
 

@@ -15,6 +15,7 @@ from api.orbits.worker import CalculationWorker
 from api.settings import get_settings
 from benchmarks.settings import BenchmarkSettings
 from models.pydantic import CoordinateRequest
+from models.pydantic.auth import TokenResponse
 from models.pydantic.benchmarks import BenchmarkHealthSample, BenchmarkReport, BenchmarkSample, BenchmarkScenario
 
 
@@ -105,6 +106,18 @@ async def measure_http(
     async with httpx.AsyncClient(
         base_url=settings.APP_BENCH_BASE_URL, timeout=settings.APP_BENCH_TIMEOUT_SEC
     ) as client:
+        if not settings.APP_BENCH_USERNAME or not settings.APP_BENCH_PASSWORD.get_secret_value():
+            raise ValueError("HTTP measurements require APP_BENCH_USERNAME and APP_BENCH_PASSWORD")
+        login = await client.post(
+            "/api/v1/auth/login",
+            json={
+                "username": settings.APP_BENCH_USERNAME,
+                "password": settings.APP_BENCH_PASSWORD.get_secret_value(),
+            },
+        )
+        login.raise_for_status()
+        token = TokenResponse.model_validate_json(login.content)
+        client.headers["Authorization"] = f"Bearer {token.access_token}"
         warmup = await _send(client, CoordinateRequest.model_validate({**request.model_dump(), "end": request.start}))
         if warmup.status != 200:
             raise RuntimeError(f"Warmup failed with HTTP {warmup.status}")

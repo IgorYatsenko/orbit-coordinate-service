@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from api.services.base import BaseService
+from models.exceptions.access import DatabaseUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -62,13 +63,17 @@ class PostgreSQL(BaseService):
     async def session(self) -> AsyncGenerator[AsyncSession]:
         if self._session_maker is None:
             raise RuntimeError("PostgreSQL service has not been started")
-        async with self._session_maker.begin() as session:
-            yield session
+        try:
+            async with self._session_maker.begin() as session:
+                yield session
+        except (OSError, TimeoutError) as exc:
+            logger.warning("PostgreSQL connection failed: %s", type(exc).__name__)
+            raise DatabaseUnavailable() from exc
 
     async def ping(self) -> bool:
         try:
             async with asyncio.timeout(self._healthcheck_timeout_sec), self.session() as session:
                 return (await session.scalar(select(1))) == 1
-        except (SQLAlchemyError, OSError, TimeoutError) as exc:
+        except (SQLAlchemyError, OSError, TimeoutError, DatabaseUnavailable) as exc:
             logger.warning("PostgreSQL healthcheck failed: %s", type(exc).__name__)
             return False
