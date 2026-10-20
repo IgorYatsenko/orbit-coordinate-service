@@ -60,7 +60,7 @@ async def test_actual_worker_crash_is_detected_and_resources_close(omm_request: 
         assert await compute.ping() is True
         # Exercise an actual process death, not a mocked executor state.
         with pytest.raises(BrokenProcessPool):
-            await asyncio.shield(compute._submit(os._exit, 17))
+            await asyncio.shield(compute._submit(False, os._exit, 17))
         assert await compute.ping() is False
         with pytest.raises(ComputeUnavailable):
             await compute.calculate(omm_request)

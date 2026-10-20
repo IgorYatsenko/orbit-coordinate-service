@@ -19,11 +19,17 @@ from models.pydantic.auth import TokenResponse
 from models.pydantic.benchmarks import BenchmarkHealthSample, BenchmarkReport, BenchmarkSample, BenchmarkScenario
 
 
-def _scenarios(request: CoordinateRequest) -> list[tuple[str, CoordinateRequest]]:
+def _scenarios(request: CoordinateRequest, *, max_points: int) -> list[tuple[str, CoordinateRequest]]:
     result = []
     for hours, step in ((1, 60), (1, 1), (24, 60), (24, 1)):
         fields = {**request.model_dump(), "end": request.start + timedelta(hours=hours), "step_seconds": step}
         result.append((f"{hours}h_step_{step}s", CoordinateRequest.model_validate(fields)))
+    fields = {
+        **request.model_dump(),
+        "end": request.start + timedelta(seconds=max_points - 1),
+        "step_seconds": 1,
+    }
+    result.append(("max_points_step_1s", CoordinateRequest.model_validate(fields)))
     return result
 
 
@@ -47,7 +53,7 @@ def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> lis
     )
     worker.run(CoordinateRequest.model_validate({**request.model_dump(), "end": request.start}))
     scenarios = []
-    for name, payload in _scenarios(request):
+    for name, payload in _scenarios(request, max_points=config.APP_COMPUTE_MAX_POINTS):
         samples = []
         for _ in range(settings.APP_BENCH_REPETITIONS):
             started = perf_counter()
@@ -103,6 +109,7 @@ async def measure_http(
     settings: BenchmarkSettings, request: CoordinateRequest
 ) -> tuple[list[BenchmarkScenario], list[BenchmarkHealthSample]]:
     health: list[BenchmarkHealthSample] = []
+    inputs = _scenarios(request, max_points=get_settings().APP_COMPUTE_MAX_POINTS)
     async with httpx.AsyncClient(
         base_url=settings.APP_BENCH_BASE_URL, timeout=settings.APP_BENCH_TIMEOUT_SEC
     ) as client:
@@ -125,15 +132,15 @@ async def measure_http(
         monitor = asyncio.create_task(_monitor_health(client, stopped, settings.APP_BENCH_HEALTH_INTERVAL_SEC, health))
         scenarios = []
         try:
-            for name, payload in _scenarios(request):
+            for name, payload in inputs:
                 samples = [await _send(client, payload) for _ in range(settings.APP_BENCH_REPETITIONS)]
                 scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=samples)
                 scenarios.append(scenario)
                 _print_scenario(scenario)
-            _, payload = _scenarios(request)[-1]
+            _, payload = inputs[-1]
             burst = await asyncio.gather(*(_send(client, payload) for _ in range(settings.APP_BENCH_CONCURRENCY)))
             scenario = BenchmarkScenario(
-                name="concurrent_24h_step_1s", point_count=payload.point_count, samples=list(burst)
+                name="concurrent_max_points", point_count=payload.point_count, samples=list(burst)
             )
             scenarios.append(scenario)
             _print_scenario(scenario)

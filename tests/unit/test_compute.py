@@ -102,9 +102,26 @@ async def test_idle_probe_detects_an_already_broken_executor(pool: tuple[Compute
     assert await compute.ping() is False
 
 
-async def test_probe_deadline_preserves_occupied_slot(pool: tuple[Compute, ControlledExecutor]) -> None:
+async def test_probe_deadline_keeps_a_single_shared_probe(pool: tuple[Compute, ControlledExecutor]) -> None:
     compute, executor = pool
     assert await compute.ping() is False
     assert not executor.pending[-1].done()
     assert await compute.ping() is False
     assert len(executor.pending) == 2  # Warmup plus one shared probe; no growing health queue.
+
+
+async def test_health_probe_does_not_reject_a_calculation_in_an_idle_pool(
+    pool: tuple[Compute, ControlledExecutor], omm_request: CoordinateRequest
+) -> None:
+    compute, executor = pool
+    probing = asyncio.create_task(compute.ping())
+    await asyncio.sleep(0)
+    calculation = asyncio.create_task(compute.calculate(omm_request))
+    await asyncio.sleep(0)
+    assert len(executor.pending) == 3  # Warmup, one probe and one admitted calculation.
+    with pytest.raises(ComputeBusy):
+        await compute.calculate(omm_request)
+    executor.pending[1].set_result(1001)
+    assert await probing is True
+    executor.pending[2].set_result(CalculationResult(payload=b"{}", point_count=1, duration_sec=0.01))
+    assert (await calculation).point_count == 1
