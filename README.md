@@ -2,7 +2,7 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Версия **1.0.0** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+Версия **1.0.1** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
 широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
 Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
@@ -20,19 +20,17 @@ cp .env.example .env
 docker compose up --build --wait
 poetry run poe add-test-user
 curl --fail http://localhost:8000/health/live
-curl --fail http://localhost:8000/health/ready
+curl --fail -i http://localhost:8000/health/ready
 ```
 
 Compose запускает PostgreSQL и Redis,
 применяет миграции отдельным контейнером и запускает API.
-Успешная команда `--wait` означает, что приложение прошло проверку готовности.
+Флаг `--wait` заставляет Compose дождаться готовности контейнеров.
 Swagger UI доступен по адресу [localhost:8000/docs](http://localhost:8000/docs).
 
-Пример ответа `/health/ready`:
-
-```json
-{"status":"ok","version":"1.0.0","database":"ok","compute":"ok","redis":"ok"}
-```
+`/health/ready` возвращает пустой ответ: `200`, если все ресурсы доступны,
+или `503`, если хотя бы один недоступен. Проверяются PostgreSQL, Redis,
+сервис паролей и вычислительный пул. Причина отказа записывается в лог приложения.
 
 Для изменения параметров отредактируйте `.env` и повторите запуск.
 API, PostgreSQL и Redis публикуются только на `127.0.0.1`.

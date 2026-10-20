@@ -98,7 +98,7 @@ async def test_redis_unavailability_closes_protected_operations(
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "rate_limiter_unavailable"
     ready = await client.get("/health/ready")
-    assert ready.status_code == 503 and ready.json()["redis"] == "unavailable"
+    assert ready.status_code == 503 and ready.content == b""
     assert (await client.get("/health/live")).status_code == 200
     assert (await client.get("/api/v1/auth/me", headers={"Authorization": "Bearer invalid"})).status_code == 401
 

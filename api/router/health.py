@@ -3,8 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response, status
 
 from api import __version__
-from api.dependencies import get_health_manager
-from api.managers.health import HealthManager
+from api.dependencies import get_services
+from api.services import Services
 from models import pydantic
 
 router = APIRouter(tags=["Health"])
@@ -17,15 +17,12 @@ async def liveness() -> pydantic.ServiceInfoResponse:
 
 @router.get(
     "/health/ready",
-    response_model=pydantic.ReadinessResponse,
-    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"model": pydantic.ReadinessResponse}},
-    summary="Check PostgreSQL, Redis and calculation pool availability",
+    response_class=Response,
+    responses={status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "A registered service is unavailable"}},
+    summary="Check all registered services",
 )
 async def readiness(
-    response: Response,
-    manager: Annotated[HealthManager, Depends(get_health_manager)],
-) -> pydantic.ReadinessResponse:
-    result = await manager.readiness()
-    if result.status == "unavailable":
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-    return result
+    services: Annotated[Services, Depends(get_services)],
+) -> Response:
+    available = await services.healthcheck()
+    return Response(status_code=status.HTTP_200_OK if available else status.HTTP_503_SERVICE_UNAVAILABLE)

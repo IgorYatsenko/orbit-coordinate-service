@@ -39,8 +39,10 @@ jobs:
           with open("pyproject.toml", "rb") as stream:
               version = tomllib.load(stream)["project"]["version"]
           with urllib.request.urlopen("http://localhost:8000/health/ready", timeout=5) as response:
+              assert response.status == 200 and response.read() == b""
+          with urllib.request.urlopen("http://localhost:8000/health/live", timeout=5) as response:
               payload = json.load(response)
-          assert payload == {"status": "ok", "version": version, "database": "ok", "compute": "ok", "redis": "ok"}, payload
+          assert payload == {"status": "ok", "version": version}, payload
           request = urllib.request.Request(
               "http://localhost:8000/api/v1/auth/login",
               data=json.dumps({"username": "testuser", "password": "test-password"}).encode(),

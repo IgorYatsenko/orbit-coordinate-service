@@ -8,7 +8,6 @@ import pytest
 from sqlalchemy import select, update
 
 from api.main import Application
-from api.services import Services
 from api.settings import _Settings
 from models.exceptions.access import DatabaseUnavailable
 from models.pydantic.auth import LoginRequest
@@ -104,26 +103,22 @@ async def test_poe_task_creates_test_user_and_preserves_existing_record(applicat
 
 
 async def test_database_connection_refusal_returns_safe_503(
-    application: Application, client: httpx.AsyncClient, app_settings: _Settings
+    application: Application, client: httpx.AsyncClient, app_settings: _Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    unavailable = Services(
-        config=app_settings.model_copy(
-            update={"APP_DB_HOST": "127.0.0.1", "APP_DB_PORT": 1, "APP_DB_CONNECT_TIMEOUT_SEC": 0.05}
-        )
-    ).database
-    original = application.services.database
+    database = application.services.database
+    await database.stop()
+    monkeypatch.setattr(database, "_url", app_settings.database_url.set(host="127.0.0.1", port=1))
+    monkeypatch.setattr(database, "_connect_timeout_sec", 0.05)
     try:
         with pytest.raises(DatabaseUnavailable):
-            await unavailable.start()
-        application.services.database = unavailable
+            await database.start()
         response = await client.get("/api/v1/auth/me")
         assert response.status_code == 503
         assert response.json() == {
             "detail": {"code": "database_unavailable", "message": "Database operation could not be completed"}
         }
         ready = await client.get("/health/ready")
-        assert ready.status_code == 503 and ready.json()["database"] == "unavailable"
+        assert ready.status_code == 503 and ready.content == b""
         assert (await client.get("/health/live")).status_code == 200
     finally:
-        application.services.database = original
-        await unavailable.stop()
+        await database.stop()
