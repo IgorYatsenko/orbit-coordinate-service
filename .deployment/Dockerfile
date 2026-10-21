@@ -9,7 +9,7 @@ ENV POETRY_VIRTUALENVS_IN_PROJECT=true \
 WORKDIR /app
 
 RUN pip install --no-cache-dir "poetry==${POETRY_VERSION}"
-COPY pyproject.toml poetry.lock ./
+COPY pyproject.toml poetry.lock LICENSE ./
 RUN poetry install --only main --no-root
 COPY README.md ./
 COPY api ./api
@@ -35,6 +35,6 @@ COPY --from=builder /app/.venv /app/.venv
 COPY api ./api
 COPY models ./models
 COPY migrations ./migrations
-COPY alembic.ini ./
+COPY alembic.ini LICENSE ./
 USER app
 CMD ["python", "-m", "api"]
