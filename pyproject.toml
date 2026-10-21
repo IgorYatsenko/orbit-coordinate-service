@@ -1,6 +1,6 @@
 [project]
 name = "orbit-coordinate-service"
-version = "1.0.1"
+version = "1.1.0"
 description = "A satellite coordinate calculation service and metadata registry."
 authors = []
 readme = "README.md"
@@ -84,22 +84,4 @@ args = [{ name = "message", options = ["-m"], required = true }]
 
 [tool.poe.tasks.add-test-user]
 help = "Create the demonstration user: testuser / test-password."
-cmd = """python -c '
-import asyncio
-from api.db.users import create_if_missing
-from api.services import Services
-from api.settings import get_settings
-
-async def main() -> None:
-    services = Services(config=get_settings())
-    try:
-        await services.database.start()
-        encoded = await services.passwords.hash("test-password")
-        async with services.database.session() as session:
-            user_id = await create_if_missing(session, username="testuser", password_hash=encoded)
-        print("Test user created" if user_id else "Test user already exists")
-    finally:
-        await services.database.stop()
-
-asyncio.run(main())
-'"""
+script = "api.demo_user:main"
