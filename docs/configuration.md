@@ -1,4 +1,4 @@
-# Настройки 1.0.0
+# Настройки 1.1.0
 
 Все эксплуатационные настройки начинаются с `APP_`. Подгруппы обозначают владельца:
 `APP_DB_*` — соединения приложения с БД, `APP_TEST_DB_*` — отдельная тестовая БД,
@@ -71,10 +71,10 @@ URL создаётся через SQLAlchemy `URL.create`, поэтому спе
 | Переменная | Default | Назначение |
 | --- | --- | --- |
 | `APP_COMPUTE_WORKERS` | `2` | Процессы расчёта на один HTTP-процесс; также предел допущенных работ |
-| `APP_COMPUTE_MAX_POINTS` | `100000` | Максимум точек одного запроса, проверяется до передачи процессу |
+| `APP_COMPUTE_MAX_POINTS` | `200000` | Максимум точек одного запроса, проверяется до передачи процессу |
 | `APP_COMPUTE_CHUNK_POINTS` | `1024` | Размер порции времён для Skyfield/NumPy |
 | `APP_COMPUTE_NUMERIC_THREADS` | `1` | Потоки BLAS/OpenMP на вычислительный процесс |
-| `APP_COMPUTE_TIMEOUT_SEC` | `30` | Срок ожидания HTTP-результата, не срок убийства процесса |
+| `APP_COMPUTE_TIMEOUT_SEC` | `60` | Срок ожидания HTTP-результата, не срок убийства процесса |
 | `APP_COMPUTE_START_TIMEOUT_SEC` | `30` | Срок запуска и прогрева всех вычислителей |
 | `APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC` | `2` | Срок короткой пробы свободного вычислителя |
 
@@ -111,12 +111,12 @@ Compose передаёт их контейнеру `tests`, в котором т
 | `APP_BENCH_OUTPUT` | `artifacts/benchmark.json` | Путь JSON-отчёта |
 | `APP_BENCH_REPETITIONS` | `5` | Число последовательных измерений каждого сценария |
 | `APP_BENCH_CONCURRENCY` | `4` | Одновременные запросы с `APP_COMPUTE_MAX_POINTS` точками |
-| `APP_BENCH_TIMEOUT_SEC` | `60` | Сетевой timeout клиента benchmark |
+| `APP_BENCH_TIMEOUT_SEC` | `90` | Сетевой timeout клиента benchmark, с запасом к сроку ожидания API |
 | `APP_BENCH_HEALTH_INTERVAL_SEC` | `0.05` | Пауза между парами live/ready во время HTTP-замера |
 
 Логин и пароль исключены из JSON-отчётов через `Field(exclude=True)`.
 В `.env.example` заполнены демонстрационные `testuser / test-password`, которые создаёт
-`poetry run poe add-test-user`.
+`docker compose exec app python -m api.demo_user` или локальная задача `poetry run poe add-test-user`.
 Benchmark выполняет один вход перед прогревом; время входа не входит в время расчётов.
 Пользовательская квота применяется и к benchmark. При большом числе повторов `429`
 отражается в отчёте; для измерения вычислений согласуйте конфигурацию лимита с числом запросов.

@@ -63,12 +63,12 @@ class _Settings(BaseSettings):
     APP_RATE_LIMIT_LOGIN_WINDOW_SEC: int = Field(default=60, ge=1, description="Login rate limit window.")
 
     APP_COMPUTE_WORKERS: int = Field(default=2, ge=1, description="Calculation processes per HTTP process.")
-    APP_COMPUTE_MAX_POINTS: int = Field(default=100_000, ge=1, description="Maximum trajectory points per request.")
+    APP_COMPUTE_MAX_POINTS: int = Field(default=200_000, ge=1, description="Maximum trajectory points per request.")
     APP_COMPUTE_CHUNK_POINTS: int = Field(default=1024, ge=1, description="Vectorized points per calculation chunk.")
     APP_COMPUTE_NUMERIC_THREADS: int = Field(
         default=1, ge=1, description="BLAS/OpenMP threads per calculation process."
     )
-    APP_COMPUTE_TIMEOUT_SEC: float = Field(default=30.0, gt=0, description="HTTP wait deadline for a calculation.")
+    APP_COMPUTE_TIMEOUT_SEC: float = Field(default=60.0, gt=0, description="HTTP wait deadline for a calculation.")
     APP_COMPUTE_START_TIMEOUT_SEC: float = Field(default=30.0, gt=0, description="Calculation pool warmup deadline.")
     APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC: float = Field(default=2.0, gt=0, description="Idle pool probe deadline.")
 

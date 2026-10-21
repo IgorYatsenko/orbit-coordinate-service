@@ -5,23 +5,26 @@ import os
 import platform
 import statistics
 import sys
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from time import perf_counter
 
 import httpx
+from pydantic import TypeAdapter, ValidationError
 
 from api.orbits.worker import CalculationWorker
 from api.settings import get_settings
 from benchmarks.settings import BenchmarkSettings
-from models.pydantic import CoordinateRequest
+from models.pydantic import CalculationErrorResponse, CoordinateRequest
 from models.pydantic.auth import TokenResponse
 from models.pydantic.benchmarks import BenchmarkHealthSample, BenchmarkReport, BenchmarkSample, BenchmarkScenario
+from models.pydantic.errors import ErrorResponse
 
 
 def _scenarios(request: CoordinateRequest, *, max_points: int) -> list[tuple[str, CoordinateRequest]]:
     result = []
-    for hours, step in ((1, 60), (1, 1), (24, 60), (24, 1)):
+    for hours, step in ((1, 60), (1, 1), (24, 60), (24, 1), (48, 1)):
         fields = {**request.model_dump(), "end": request.start + timedelta(hours=hours), "step_seconds": step}
         result.append((f"{hours}h_step_{step}s", CoordinateRequest.model_validate(fields)))
     fields = {
@@ -40,10 +43,16 @@ def _print_scenario(scenario: BenchmarkScenario) -> None:
         p95 = timings[math.ceil(len(timings) * 0.95) - 1]
         print(
             f"{scenario.name}: points={scenario.point_count} success={len(successful)}/{len(scenario.samples)} "
-            f"median_ms={statistics.median(timings):.2f} p95_ms={p95:.2f} bytes={successful[0].response_bytes}"
+            f"median_ms={statistics.median(timings):.2f} p95_ms={p95:.2f} bytes={successful[0].response_bytes}",
+            flush=True,
         )
     else:
-        print(f"{scenario.name}: no successful responses")
+        print(f"{scenario.name}: no successful responses", flush=True)
+    failures = Counter(
+        sample.error_code or f"http_{sample.status}" for sample in scenario.samples if sample.status != 200
+    )
+    if failures:
+        print(f"{scenario.name}: failures={dict(failures)}", flush=True)
 
 
 def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> list[BenchmarkScenario]:
@@ -81,8 +90,20 @@ async def _send(client: httpx.AsyncClient, request: CoordinateRequest) -> Benchm
     elapsed = perf_counter() - started
     timing = response.headers.get("server-timing")
     compute = float(timing.partition("dur=")[2]) / 1000 if timing else None
+    error_code = None
+    if response.is_error:
+        try:
+            error_code = (
+                TypeAdapter(CalculationErrorResponse | ErrorResponse).validate_json(response.content).detail.code
+            )
+        except ValidationError:
+            error_code = "unstructured_error"
     return BenchmarkSample(
-        status=response.status_code, elapsed_sec=elapsed, compute_sec=compute, response_bytes=len(response.content)
+        status=response.status_code,
+        elapsed_sec=elapsed,
+        compute_sec=compute,
+        response_bytes=len(response.content),
+        error_code=error_code,
     )
 
 
