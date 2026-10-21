@@ -30,6 +30,7 @@ Compose также читает `.env` для подстановок. В кон�
 | `APP_HTTP_WORKERS` | `1` | Число HTTP-процессов; у каждого собственные DB- и вычислительный пулы |
 | `APP_HTTP_TRUSTED_PROXY_IPS` | пустая строка | Доверенные IP/CIDR reverse proxy через запятую; пустое значение отключает обработку proxy headers |
 | `APP_HTTP_KEEP_ALIVE_SEC` | `5` | Срок удержания неактивного HTTP-соединения |
+| `APP_HTTP_MAX_BODY_BYTES` | `16384` | Максимум байт в теле HTTP-запроса; превышение даёт `413 request_too_large` |
 | `APP_SHUTDOWN_TIMEOUT_SEC` | `15` | Время ожидания HTTP-запросов при остановке |
 
 В Compose `APP_HOST` должен позволять вход из сети контейнера, обычно `0.0.0.0`.

@@ -14,12 +14,13 @@ from api.exception_handlers import (
     database_error_handler,
     request_validation_error_handler,
 )
-from api.middleware import MetricsMiddleware
+from api.middleware import MetricsMiddleware, RequestBodyLimitMiddleware
 from api.router import router
 from api.services import Services
 from api.settings import _Settings, get_settings
 from models.exceptions.base import ApplicationError
 from models.exceptions.orbits import CalculationError
+from models.pydantic.errors import ErrorResponse
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,10 @@ class Application(FastAPI):
             redoc_url=None,
             openapi_url="/openapi.json" if config.APP_DOCS_ENABLED else None,
             lifespan=self._lifespan,
+            responses={413: {"model": ErrorResponse, "description": "Request body exceeds the configured size limit"}},
         )
         self.state.services = self.services
+        self.add_middleware(RequestBodyLimitMiddleware, max_body_bytes=config.APP_HTTP_MAX_BODY_BYTES)
         if self.services.metrics is not None:
             self.add_middleware(MetricsMiddleware, metrics=self.services.metrics)
         self.add_exception_handler(RequestValidationError, request_validation_error_handler)

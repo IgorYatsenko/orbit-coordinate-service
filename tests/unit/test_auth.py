@@ -1,12 +1,16 @@
 import asyncio
+import json
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import httpx
 import jwt
 import pytest
 
+from api.dependencies import get_auth_manager, limit_login
 from api.main import Application
+from api.managers.auth import AuthManager
 from api.services.auth import Auth
 from api.settings import _Settings
 from models.exceptions.auth import AuthenticationBusy, AuthenticationFailed
@@ -84,6 +88,40 @@ async def test_business_routes_require_a_bearer_token(method: str, path: str) ->
     assert response.status_code == 401
     assert response.headers["www-authenticate"] == "Bearer"
     assert response.json()["detail"]["code"] == "unauthorized"
+
+
+@pytest.mark.parametrize("password", ["\ud800", "\udfff", "secret\ud800value"])
+async def test_login_rejects_invalid_unicode_before_password_verification(password: str) -> None:
+    app = Application(settings=_Settings())
+    manager = AsyncMock(spec=AuthManager)
+    app.dependency_overrides[get_auth_manager] = lambda: manager
+    app.dependency_overrides[limit_login] = lambda: None
+    payload = json.dumps({"username": "testuser", "password": password}).encode()
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/auth/login", content=payload, headers={"Content-Type": "application/json"}
+        )
+    assert response.status_code == 422
+    assert response.json() == {
+        "detail": [
+            {"loc": ["body", "password"], "msg": "Value error, Password must be valid UTF-8", "type": "value_error"}
+        ]
+    }
+    manager.login.assert_not_awaited()
+
+
+async def test_login_preserves_valid_unicode_and_password_whitespace() -> None:
+    app = Application(settings=_Settings())
+    manager = AsyncMock(spec=AuthManager)
+    manager.login.side_effect = AuthenticationFailed()
+    app.dependency_overrides[get_auth_manager] = lambda: manager
+    app.dependency_overrides[limit_login] = lambda: None
+    password = " пароль 🚀 "
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post("/api/v1/auth/login", json={"username": "testuser", "password": password})
+    assert response.status_code == 401
+    credentials = manager.login.await_args.args[0]
+    assert credentials.password.get_secret_value() == password
 
 
 async def test_cancelled_password_check_keeps_its_capacity(monkeypatch: pytest.MonkeyPatch) -> None:

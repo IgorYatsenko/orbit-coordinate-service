@@ -22,6 +22,7 @@ class _Settings(BaseSettings):
         default="", description="Trusted proxy IPs/CIDRs; empty disables proxy headers."
     )
     APP_HTTP_KEEP_ALIVE_SEC: int = Field(default=5, ge=1, description="Idle HTTP connection timeout in seconds.")
+    APP_HTTP_MAX_BODY_BYTES: int = Field(default=16384, ge=1, description="Maximum HTTP request body size in bytes.")
     APP_SHUTDOWN_TIMEOUT_SEC: int = Field(default=15, ge=1, description="HTTP request shutdown deadline in seconds.")
 
     APP_METRICS_ENABLED: bool = Field(default=True, description="Collect HTTP metrics and expose public /metrics.")

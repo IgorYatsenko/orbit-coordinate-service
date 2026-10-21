@@ -27,6 +27,7 @@ def test_database_password_is_escaped_and_hidden(monkeypatch: pytest.MonkeyPatch
     ("name", "value"),
     [
         ("APP_DB_POOL_SIZE", "0"),
+        ("APP_HTTP_MAX_BODY_BYTES", "0"),
         ("APP_DB_STATEMENT_TIMEOUT_SEC", "0"),
         ("APP_AUTH_TOKEN_SECRET", "short"),
         ("APP_AUTH_TOKEN_TTL_SEC", "0"),

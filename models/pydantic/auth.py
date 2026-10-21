@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, SecretStr, StringConstraints
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, SecretStr, StringConstraints, field_validator
 
 
 def normalize_username(value: object) -> object:
@@ -21,6 +21,15 @@ class LoginRequest(BaseModel):
     password: SecretStr = Field(min_length=1, max_length=128, examples=["test-password"])
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_utf8(cls, value: SecretStr) -> SecretStr:
+        try:
+            value.get_secret_value().encode("utf-8")
+        except UnicodeEncodeError as error:
+            raise ValueError("Password must be valid UTF-8") from error
+        return value
 
 
 class UserResponse(BaseModel):

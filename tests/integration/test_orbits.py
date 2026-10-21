@@ -87,25 +87,28 @@ async def test_actual_worker_crash_is_detected_and_resources_close(omm_request: 
         await compute.stop()
 
 
-async def test_overdue_real_process_finishes_and_the_pool_recovers(omm_request: CoordinateRequest) -> None:
+async def test_overdue_real_process_finishes_and_the_pool_recovers(
+    omm_request: CoordinateRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
     compute = Compute(
         workers=2,
         chunk_points=64,
         numeric_threads=1,
-        timeout_sec=0.05,
-        stall_timeout_sec=0.1,
+        timeout_sec=5,
+        stall_timeout_sec=10,
         start_timeout_sec=15,
-        healthcheck_timeout_sec=1,
+        healthcheck_timeout_sec=5,
     )
     try:
         await compute.start()
         # A bounded slow job demonstrates detection without killing or cancelling the process.
+        monkeypatch.setattr("api.services.compute.monotonic", lambda: 0.0)
         future = compute._submit(True, time.sleep, 0.5)
-        await asyncio.sleep(0.15)
+        monkeypatch.setattr("api.services.compute.monotonic", lambda: 11.0)
         assert await compute.ping() is False
         with pytest.raises(ComputeUnavailable, match="overdue"):
             await compute.calculate(omm_request)
-        await asyncio.wait_for(asyncio.shield(future), timeout=3)
+        await asyncio.wait_for(asyncio.shield(future), timeout=10)
         assert not future.cancelled()
         assert await compute.ping() is True
         assert (await compute.calculate(omm_request)).point_count == omm_request.point_count
