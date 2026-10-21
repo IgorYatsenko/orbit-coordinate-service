@@ -9,7 +9,7 @@ import pytest
 from api.main import Application
 from api.services.auth import Auth
 from api.settings import _Settings
-from models.exceptions.access import AuthenticationBusy, AuthenticationFailed
+from models.exceptions.auth import AuthenticationBusy, AuthenticationFailed
 from models.pydantic.auth import TokenClaims
 
 

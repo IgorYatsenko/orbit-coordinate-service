@@ -1,4 +1,5 @@
 import asyncio
+import json
 from uuid import uuid4
 
 import httpx
@@ -86,3 +87,21 @@ async def test_invalid_metadata_does_not_reach_database(
     assert (await client.post("/api/v1/satellites", json=payload)).status_code == 422
     assert (await client.get("/api/v1/satellites")).json()["items"] == []
     assert (await client.get(f"/api/v1/satellites/{uuid4()}")).status_code == 404
+
+
+@pytest.mark.parametrize("field", ["name", "international_designator"])
+@pytest.mark.parametrize("invalid", ["ISS\x00ZARYA", "ISS\ud800"])
+async def test_invalid_database_text_is_rejected_for_create_and_replace(
+    client: httpx.AsyncClient, field: str, invalid: str
+) -> None:
+    valid = {"norad_id": 25544, "name": "МКС"}
+    created = await client.post("/api/v1/satellites", json=valid)
+    assert created.status_code == 201
+    path = f"/api/v1/satellites/{created.json()['id']}"
+    payload = json.dumps({**valid, field: invalid})
+    for method, target in (("POST", "/api/v1/satellites"), ("PUT", path)):
+        response = await client.request(method, target, content=payload, headers={"Content-Type": "application/json"})
+        assert response.status_code == 422, response.text
+        assert response.json()["detail"][0]["loc"] == ["body", field]
+    assert (await client.get(path)).json() == created.json()
+    assert (await client.get("/health/ready")).status_code == 200

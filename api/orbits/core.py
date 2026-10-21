@@ -23,6 +23,10 @@ class OrbitCalculator:
     @staticmethod
     def _validate_tle(orbit: TLEOrbit) -> None:
         try:
+            # The parser also initializes SGP4; reject invalid motion before it performs arithmetic.
+            mean_motion = float(orbit.line2[52:63])
+            if not math.isfinite(mean_motion) or mean_motion <= 0:
+                raise ValueError("TLE mean motion must be finite and positive")
             parsed = twoline2rv(orbit.line1, orbit.line2, wgs72)
             epoch_year = int(orbit.line1[18:20])
             epoch_year += 2000 if epoch_year < 57 else 1900

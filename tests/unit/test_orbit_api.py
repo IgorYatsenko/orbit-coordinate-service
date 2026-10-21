@@ -6,8 +6,11 @@ import pytest
 
 from api.dependencies import get_current_user
 from api.main import Application
+from api.managers.orbits import OrbitManager
+from api.services.compute import Compute
 from api.settings import _Settings
 from models.exceptions import ComputeBusy, ComputeTimeout, ComputeUnavailable, OrbitCalculationError
+from models.exceptions.orbits import PointLimitExceeded
 from models.pydantic import CalculationResult, CoordinateRequest, RequestValidationErrorResponse
 
 
@@ -28,6 +31,14 @@ async def test_point_limit_is_checked_before_submitting_work(
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "point_limit_exceeded"
     calculate.assert_not_awaited()
+
+
+async def test_manager_enforces_point_limit_without_http(omm_request: CoordinateRequest) -> None:
+    compute = AsyncMock(spec=Compute)
+    manager = OrbitManager(compute=compute, max_points=omm_request.point_count - 1)
+    with pytest.raises(PointLimitExceeded):
+        await manager.calculate(omm_request)
+    compute.calculate.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

@@ -25,7 +25,7 @@ class BenchmarkConfiguration(BaseModel):
 
 
 class BenchmarkSample(BaseModel):
-    status: int
+    status: int | None
     elapsed_sec: float
     compute_sec: float | None
     response_bytes: int
@@ -41,8 +41,9 @@ class BenchmarkScenario(BaseModel):
 
 class BenchmarkHealthSample(BaseModel):
     path: str
-    status: int
+    status: int | None
     elapsed_sec: float
+    error_code: str | None = None
 
 
 class BenchmarkReport(BaseModel):
@@ -57,3 +58,5 @@ class BenchmarkReport(BaseModel):
     benchmark_settings: BenchmarkConfiguration
     scenarios: list[BenchmarkScenario]
     health: list[BenchmarkHealthSample]
+    completed: bool = False
+    failure: str | None = None

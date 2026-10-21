@@ -1,6 +1,6 @@
 [project]
 name = "orbit-coordinate-service"
-version = "1.2.0"
+version = "1.2.1"
 description = "A satellite coordinate calculation service and metadata registry."
 authors = []
 readme = "README.md"

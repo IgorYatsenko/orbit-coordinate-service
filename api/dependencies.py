@@ -7,7 +7,7 @@ from api.managers.auth import AuthManager
 from api.managers.orbits import OrbitManager
 from api.managers.satellites import SatelliteManager
 from api.services import Services
-from models.exceptions.access import AuthenticationFailed
+from models.exceptions.auth import AuthenticationFailed
 from models.pydantic.auth import UserResponse
 
 bearer = HTTPBearer(auto_error=False, description="Obtain a token with POST /api/v1/auth/login, then paste it here.")

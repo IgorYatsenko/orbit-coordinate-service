@@ -14,6 +14,7 @@ router = APIRouter(
         401: {"model": ErrorResponse},
         422: {"model": RequestValidationErrorResponse},
         429: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
         503: {"model": ErrorResponse},
     },
 )

@@ -9,7 +9,8 @@ from redis.exceptions import RedisError
 
 from api.services.base import BaseService
 from api.settings import _Settings
-from models.exceptions.access import RateLimitExceeded, RedisUnavailable
+from models.exceptions.auth import RateLimitExceeded
+from models.exceptions.infrastructure import RedisUnavailable
 
 logger = logging.getLogger(__name__)
 

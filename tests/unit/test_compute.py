@@ -33,21 +33,25 @@ class ControlledExecutor:
 
 
 @pytest.fixture
-async def pool(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[tuple[Compute, ControlledExecutor]]:
+async def pool(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> AsyncGenerator[tuple[Compute, ControlledExecutor]]:
     executor = ControlledExecutor()
     monkeypatch.setattr("api.services.compute.ProcessPoolExecutor", lambda **kwargs: executor)
     monkeypatch.setattr("api.services.compute.multiprocessing.get_context", lambda _: Mock())
     compute = Compute(
-        workers=1,
+        workers=getattr(request, "param", 1),
         chunk_points=16,
         numeric_threads=1,
         timeout_sec=0.02,
+        stall_timeout_sec=1,
         start_timeout_sec=1,
         healthcheck_timeout_sec=0.02,
     )
     starting = asyncio.create_task(compute.start())
     await asyncio.sleep(0)
-    executor.pending[0].set_result(1001)
+    for future in executor.pending:
+        future.set_result(1001)
     await starting
     try:
         yield compute, executor
@@ -94,6 +98,34 @@ async def test_worker_death_marks_pool_unavailable(
     assert await compute.ping() is False
     with pytest.raises(ComputeUnavailable):
         await compute.calculate(omm_request)
+
+
+@pytest.mark.parametrize("pool", [1, 2], indirect=True)
+async def test_overdue_work_blocks_admission_and_readiness_without_cancellation(
+    pool: tuple[Compute, ControlledExecutor], monkeypatch: pytest.MonkeyPatch, omm_request: CoordinateRequest
+) -> None:
+    compute, executor = pool
+    clock = 100.0
+    monkeypatch.setattr("api.services.compute.monotonic", lambda: clock)
+    with pytest.raises(ComputeTimeout):
+        await compute.calculate(omm_request)
+    calculation = executor.pending[-1]
+    clock += 2
+    assert await compute.ping() is False
+    with pytest.raises(ComputeUnavailable, match="overdue"):
+        await compute.calculate(omm_request)
+    assert not calculation.done() and not executor.closed
+    calculation.set_result(CalculationResult(payload=b"{}", point_count=1, duration_sec=2))
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    probe = asyncio.create_task(compute.ping())
+    await asyncio.sleep(0)
+    executor.pending[-1].set_result(1001)
+    assert await probe is True
+    task = asyncio.create_task(compute.calculate(omm_request))
+    await asyncio.sleep(0)
+    executor.pending[-1].set_result(CalculationResult(payload=b"{}", point_count=1, duration_sec=0.01))
+    assert (await task).point_count == 1
 
 
 async def test_idle_probe_detects_an_already_broken_executor(pool: tuple[Compute, ControlledExecutor]) -> None:

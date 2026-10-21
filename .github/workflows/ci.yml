@@ -31,8 +31,14 @@ jobs:
         run: |
           docker compose up --build --wait
           docker compose exec -T app python -m api.demo_user
+          TOKEN=$(curl --fail-with-body -sS http://localhost:8000/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"testuser","password":"test-password"}' \
+            | docker compose exec -T app python -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')
+          export TOKEN
           python - <<'PY'
           import json
+          import os
           import tomllib
           import urllib.request
 
@@ -44,13 +50,12 @@ jobs:
               payload = json.load(response)
           assert payload == {"status": "ok", "version": version}, payload
           request = urllib.request.Request(
-              "http://localhost:8000/api/v1/auth/login",
-              data=json.dumps({"username": "testuser", "password": "test-password"}).encode(),
-              headers={"Content-Type": "application/json"},
+              "http://localhost:8000/api/v1/auth/me",
+              headers={"Authorization": "Bearer " + os.environ["TOKEN"]},
           )
           with urllib.request.urlopen(request, timeout=5) as response:
-              login = json.load(response)
-          assert login["token_type"] == "bearer" and login["access_token"]
+              user = json.load(response)
+          assert user["username"] == "testuser" and user["is_active"]
           for path in ("examples/request-tle.json", "examples/request-omm.json"):
               with open(path, "rb") as stream:
                   request = urllib.request.Request(
@@ -58,7 +63,7 @@ jobs:
                       data=stream.read(),
                       headers={
                           "Content-Type": "application/json",
-                          "Authorization": "Bearer " + login["access_token"],
+                          "Authorization": "Bearer " + os.environ["TOKEN"],
                       },
                   )
               with urllib.request.urlopen(request, timeout=30) as response:

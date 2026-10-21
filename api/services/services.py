@@ -25,6 +25,7 @@ class Services(BaseServiceHub):
             chunk_points=config.APP_COMPUTE_CHUNK_POINTS,
             numeric_threads=config.APP_COMPUTE_NUMERIC_THREADS,
             timeout_sec=config.APP_COMPUTE_TIMEOUT_SEC,
+            stall_timeout_sec=config.APP_COMPUTE_STALL_TIMEOUT_SEC,
             start_timeout_sec=config.APP_COMPUTE_START_TIMEOUT_SEC,
             healthcheck_timeout_sec=config.APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC,
         )
