@@ -26,9 +26,8 @@ def get_auth_manager(request: Request) -> AuthManager:
     services = get_services(request)
     return AuthManager(
         database=services.database,
-        passwords=services.passwords,
+        auth=services.auth,
         redis=services.redis,
-        tokens=services.tokens,
         config=services.config,
     )
 

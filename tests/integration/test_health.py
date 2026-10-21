@@ -16,10 +16,10 @@ async def test_ready_after_real_lifespan_and_migrations(client: httpx.AsyncClien
     assert live.status_code == 200
 
 
-async def test_stopped_registered_password_service_makes_readiness_unavailable(
+async def test_stopped_registered_auth_service_makes_readiness_unavailable(
     application: Application, client: httpx.AsyncClient
 ) -> None:
-    await application.services.passwords.stop()
+    await application.services.auth.stop()
     ready = await client.get("/health/ready")
     assert ready.status_code == 503
     assert ready.content == b""

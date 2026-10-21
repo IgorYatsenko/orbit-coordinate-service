@@ -101,7 +101,7 @@ async def test_demo_entrypoints_create_test_user_and_preserve_existing_record(
     assert records[0] == records[1]
     async with application.services.database.session() as session:
         user = (await session.scalars(select(User).where(User.username == "testuser"))).one()
-    assert await application.services.passwords.verify(user.password_hash, "test-password")
+    assert await application.services.auth.verify_password(user.password_hash, "test-password")
 
 
 async def test_database_connection_refusal_returns_safe_503(

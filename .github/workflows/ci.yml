@@ -65,6 +65,11 @@ jobs:
                   result = json.load(response)
               assert result["reference_frame"] == "WGS84" and result["point_count"] == 61
               assert len(result["points"]) == 61
+          with urllib.request.urlopen("http://localhost:8000/metrics", timeout=5) as response:
+              metrics = response.read().decode()
+              assert response.status == 200
+          assert 'orbit_http_requests_total{method="POST",route="/api/v1/orbits/coordinates",status="200"} 2.0' in metrics
+          assert "orbit_http_request_duration_seconds_bucket" in metrics
           PY
       - name: Show container logs on failure
         if: failure()

@@ -39,7 +39,7 @@ async def test_user_limit_is_shared_by_tokens_but_isolated_between_users(
     assert rejected.json()["detail"]["code"] == "rate_limit_exceeded"
     assert int(rejected.headers["retry-after"]) == 1
     other = LoginRequest(username="other-user", password="another-test-password")
-    encoded = await application.services.passwords.hash(other.password.get_secret_value())
+    encoded = await application.services.auth.hash_password(other.password.get_secret_value())
     async with application.services.database.session() as session:
         await users.create_if_missing(session, username=other.username, password_hash=encoded)
     second = await client.post(
