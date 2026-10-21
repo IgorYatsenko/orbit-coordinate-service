@@ -115,7 +115,7 @@ def user_credentials() -> LoginRequest:
 
 @pytest.fixture
 async def registered_user(application: Application, user_credentials: LoginRequest) -> None:
-    encoded = await application.services.passwords.hash(user_credentials.password.get_secret_value())
+    encoded = await application.services.auth.hash_password(user_credentials.password.get_secret_value())
     async with application.services.database.session() as session:
         await users.create_if_missing(session, username=user_credentials.username, password_hash=encoded)
 

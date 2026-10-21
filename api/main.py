@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from api import __version__
 from api.exception_handlers import access_error_handler, database_error_handler, request_validation_error_handler
+from api.middleware import MetricsMiddleware
 from api.router import router
 from api.services import Services
 from api.settings import _Settings, get_settings
@@ -31,6 +32,8 @@ class Application(FastAPI):
             lifespan=self._lifespan,
         )
         self.state.services = self.services
+        if self.services.metrics is not None:
+            self.add_middleware(MetricsMiddleware, metrics=self.services.metrics)
         self.add_exception_handler(RequestValidationError, request_validation_error_handler)
         self.add_exception_handler(AccessError, access_error_handler)
         self.add_exception_handler(SQLAlchemyError, database_error_handler)

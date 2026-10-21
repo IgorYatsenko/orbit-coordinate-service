@@ -2,7 +2,7 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Версия **1.1.0** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+Версия **1.2.0** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
 широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
 Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
@@ -18,6 +18,7 @@ docker compose up --build --wait
 docker compose exec app python -m api.demo_user
 curl --fail http://localhost:8000/health/live
 curl --fail -i http://localhost:8000/health/ready
+curl --fail http://localhost:8000/metrics
 ```
 
 Compose запускает PostgreSQL и Redis,
@@ -27,7 +28,13 @@ Swagger UI доступен по адресу [localhost:8000/docs](http://local
 
 `/health/ready` возвращает пустой ответ: `200`, если все ресурсы доступны,
 или `503`, если хотя бы один недоступен. Проверяются PostgreSQL, Redis,
-сервис паролей и вычислительный пул. Причина отказа записывается в лог приложения.
+компонент Auth и вычислительный пул. Причина отказа записывается в лог приложения.
+
+`/metrics` открыт для сбора Prometheus: показывает число запросов и время ответа по маршрутам,
+методам и HTTP-кодам. Healthcheck и сам сбор метрик в статистику не входят.
+Значения появляются после первых запросов к API.
+Сбор можно отключить через `APP_METRICS_ENABLED=false`.
+Примеры запросов к метрикам и устройство сбора описаны в [архитектуре](docs/architecture.md#12-метрики-prometheus).
 
 Для изменения параметров отредактируйте `.env` и повторите запуск.
 API, PostgreSQL и Redis публикуются только на `127.0.0.1`.
@@ -219,7 +226,7 @@ poetry run poe test
 ```text
 api/router/          HTTP-маршруты и ответы
 api/managers/        координация операций
-api/services/        PostgreSQL, Redis, проверка паролей, вычислительный пул и lifecycle
+api/services/        PostgreSQL, Redis, Auth, метрики, вычислительный пул и lifecycle
 api/db/              SQL-запросы с переданной сессией
 api/orbits/          численное ядро и процесс вычисления
 api/settings.py      настройки из окружения и .env

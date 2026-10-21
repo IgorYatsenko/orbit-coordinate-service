@@ -1,15 +1,16 @@
+from api.services.auth import Auth
 from api.services.base import BaseServiceHub
 from api.services.compute import Compute
-from api.services.passwords import Passwords
+from api.services.metrics import Metrics
 from api.services.postgresql import PostgreSQL
 from api.services.redis import Redis
 from api.settings import _Settings
-from api.tokens import Tokens
 
 
 class Services(BaseServiceHub):
     def __init__(self, *, config: _Settings) -> None:
         self.config = config
+        self.metrics = Metrics(buckets_sec=config.APP_METRICS_HTTP_BUCKETS_SEC) if config.APP_METRICS_ENABLED else None
         self.database = PostgreSQL(
             url=config.database_url,
             pool_size=config.APP_DB_POOL_SIZE,
@@ -28,6 +29,5 @@ class Services(BaseServiceHub):
             healthcheck_timeout_sec=config.APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC,
         )
         self.redis = Redis(config=config)
-        self.passwords = Passwords(config=config)
-        self.tokens = Tokens(config=config)
-        super().__init__(services=(self.database, self.redis, self.passwords, self.compute))
+        self.auth = Auth(config=config)
+        super().__init__(services=(self.database, self.redis, self.auth, self.compute))

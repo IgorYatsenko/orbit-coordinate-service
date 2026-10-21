@@ -1,21 +1,17 @@
 from api.db import users
-from api.services.passwords import Passwords
+from api.services.auth import Auth
 from api.services.postgresql import PostgreSQL
 from api.services.redis import Redis
 from api.settings import _Settings
-from api.tokens import Tokens
 from models.exceptions.access import AuthenticationFailed
 from models.pydantic.auth import LoginRequest, TokenResponse, UserResponse
 
 
 class AuthManager:
-    def __init__(
-        self, *, database: PostgreSQL, passwords: Passwords, redis: Redis, tokens: Tokens, config: _Settings
-    ) -> None:
+    def __init__(self, *, database: PostgreSQL, auth: Auth, redis: Redis, config: _Settings) -> None:
         self._database = database
-        self._passwords = passwords
+        self._auth = auth
         self._redis = redis
-        self._tokens = tokens
         self._config = config
 
     async def limit_login(self, client_ip: str) -> None:
@@ -31,13 +27,13 @@ class AuthManager:
             user = await users.get_by_username(session, credentials.username)
         # Unknown and disabled accounts still perform an Argon2 check, without holding a DB transaction.
         encoded = user.password_hash if user is not None else None
-        valid = await self._passwords.verify(encoded, credentials.password.get_secret_value())
+        valid = await self._auth.verify_password(encoded, credentials.password.get_secret_value())
         if user is None or not user.is_active or not valid:
             raise AuthenticationFailed()
-        return self._tokens.issue(user.id)
+        return self._auth.issue_token(user.id)
 
     async def authenticate(self, token: str) -> UserResponse:
-        claims = self._tokens.decode(token)
+        claims = self._auth.decode_token(token)
         await self._redis.enforce(
             bucket="user",
             identity=str(claims.sub),

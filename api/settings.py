@@ -1,7 +1,8 @@
+import math
 from functools import lru_cache
 from typing import Literal, Self
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import URL
 
@@ -22,6 +23,13 @@ class _Settings(BaseSettings):
     )
     APP_HTTP_KEEP_ALIVE_SEC: int = Field(default=5, ge=1, description="Idle HTTP connection timeout in seconds.")
     APP_SHUTDOWN_TIMEOUT_SEC: int = Field(default=15, ge=1, description="HTTP request shutdown deadline in seconds.")
+
+    APP_METRICS_ENABLED: bool = Field(default=True, description="Collect HTTP metrics and expose public /metrics.")
+    APP_METRICS_HTTP_BUCKETS_SEC: tuple[float, ...] = Field(
+        default=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0),
+        min_length=1,
+        description="Positive increasing HTTP duration histogram bounds in seconds, encoded as a JSON array.",
+    )
 
     APP_DB_HOST: str = Field(default="localhost", min_length=1, description="PostgreSQL hostname.")
     APP_DB_PORT: int = Field(default=55432, ge=1, le=65535, description="PostgreSQL connection port.")
@@ -73,6 +81,13 @@ class _Settings(BaseSettings):
     APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC: float = Field(default=2.0, gt=0, description="Idle pool probe deadline.")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore", frozen=True)
+
+    @field_validator("APP_METRICS_HTTP_BUCKETS_SEC")
+    @classmethod
+    def validate_metrics_buckets(cls, value: tuple[float, ...]) -> tuple[float, ...]:
+        if any(not math.isfinite(bound) or bound <= 0 for bound in value) or tuple(sorted(set(value))) != value:
+            raise ValueError("Metrics buckets must be finite, positive and strictly increasing")
+        return value
 
     @model_validator(mode="after")
     def validate_password_memory(self) -> Self:

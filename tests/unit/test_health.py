@@ -11,7 +11,7 @@ from api.settings import _Settings
 async def test_liveness_does_not_contact_database(monkeypatch: pytest.MonkeyPatch) -> None:
     app = Application(settings=_Settings())
     pings = []
-    for service in (app.services.database, app.services.redis, app.services.passwords, app.services.compute):
+    for service in (app.services.database, app.services.redis, app.services.auth, app.services.compute):
         ping = AsyncMock(side_effect=AssertionError("Liveness must not access services"))
         monkeypatch.setattr(service, "ping", ping)
         pings.append(ping)
@@ -23,13 +23,13 @@ async def test_liveness_does_not_contact_database(monkeypatch: pytest.MonkeyPatc
         ping.assert_not_awaited()
 
 
-@pytest.mark.parametrize("unavailable", [None, "database", "redis", "passwords", "compute"])
+@pytest.mark.parametrize("unavailable", [None, "database", "redis", "auth", "compute"])
 async def test_readiness_requires_every_registered_service_and_returns_no_body(
     monkeypatch: pytest.MonkeyPatch, unavailable: str | None
 ) -> None:
     app = Application(settings=_Settings())
     pings = []
-    for name in ("database", "redis", "passwords", "compute"):
+    for name in ("database", "redis", "auth", "compute"):
         ping = AsyncMock(return_value=name != unavailable)
         monkeypatch.setattr(getattr(app.services, name), "ping", ping)
         pings.append(ping)
@@ -46,7 +46,7 @@ async def test_readiness_returns_empty_503_when_a_service_probe_raises(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     app = Application(settings=_Settings())
-    for service in (app.services.database, app.services.passwords, app.services.compute):
+    for service in (app.services.database, app.services.auth, app.services.compute):
         monkeypatch.setattr(service, "ping", AsyncMock(return_value=True))
     monkeypatch.setattr(app.services.redis, "ping", AsyncMock(side_effect=RuntimeError("probe failed")))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:

@@ -7,9 +7,8 @@ import jwt
 import pytest
 
 from api.main import Application
-from api.services.passwords import Passwords
+from api.services.auth import Auth
 from api.settings import _Settings
-from api.tokens import Tokens
 from models.exceptions.access import AuthenticationBusy, AuthenticationFailed
 from models.pydantic.auth import TokenClaims
 
@@ -21,9 +20,9 @@ def user_id() -> UUID:
 
 def test_signed_token_roundtrip_has_bounded_lifetime(user_id: UUID) -> None:
     settings = _Settings(APP_AUTH_TOKEN_TTL_SEC=37)
-    tokens = Tokens(config=settings)
-    issued = tokens.issue(user_id)
-    claims = tokens.decode(issued.access_token)
+    auth = Auth(config=settings)
+    issued = auth.issue_token(user_id)
+    claims = auth.decode_token(issued.access_token)
     assert claims.sub == user_id
     assert claims.exp - claims.iat == issued.expires_in == 37
     assert issued.access_token not in repr(issued)
@@ -64,7 +63,7 @@ def test_invalid_tokens_are_rejected(user_id: UUID, mutation: str) -> None:
         key = "test-key-for-unsupported-algorithm" * 2
     token = jwt.encode(claims, key, algorithm=algorithm)
     with pytest.raises(AuthenticationFailed):
-        Tokens(config=settings).decode(token)
+        Auth(config=settings).decode_token(token)
 
 
 @pytest.mark.parametrize(
@@ -88,7 +87,7 @@ async def test_business_routes_require_a_bearer_token(method: str, path: str) ->
 
 
 async def test_cancelled_password_check_keeps_its_capacity(monkeypatch: pytest.MonkeyPatch) -> None:
-    passwords = Passwords(
+    auth = Auth(
         config=_Settings(
             APP_AUTH_PASSWORD_WORKERS=1,
             APP_AUTH_PASSWORD_MEMORY_KIB=1024,
@@ -96,7 +95,7 @@ async def test_cancelled_password_check_keeps_its_capacity(monkeypatch: pytest.M
             APP_AUTH_PASSWORD_PARALLELISM=1,
         )
     )
-    await passwords.start()
+    await auth.start()
     pending = asyncio.get_running_loop().create_future()
     entered = asyncio.Event()
 
@@ -104,13 +103,13 @@ async def test_cancelled_password_check_keeps_its_capacity(monkeypatch: pytest.M
         entered.set()
         return await pending
 
-    monkeypatch.setattr("api.services.passwords.asyncio.to_thread", delayed_verification)
-    checking = asyncio.create_task(passwords.verify(None, "unknown-password"))
+    monkeypatch.setattr("api.services.auth.asyncio.to_thread", delayed_verification)
+    checking = asyncio.create_task(auth.verify_password(None, "unknown-password"))
     await entered.wait()
     checking.cancel()
     with pytest.raises(asyncio.CancelledError):
         await checking
     with pytest.raises(AuthenticationBusy):
-        await passwords.verify(None, "another-password")
+        await auth.verify_password(None, "another-password")
     pending.set_result(False)
-    await passwords.stop()
+    await auth.stop()
