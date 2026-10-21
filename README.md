@@ -2,7 +2,7 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Версия **1.2.2** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+Версия **1.2.3** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
 широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
 Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
@@ -168,7 +168,11 @@ curl --fail-with-body -sS 'http://localhost:8000/api/v1/satellites?limit=10' \
 
 ## Разработка на Python
 
-Нужны Python 3.13 и Poetry 2.4.1:
+Локальный Python-запуск рассчитан на Linux и macOS: вычислительный процесс использует
+модуль `resource`, недоступный в Python для Windows. На Windows используйте Docker
+с Linux-контейнерами по quick start выше.
+
+Для локальной разработки нужны Python 3.13 и Poetry 2.4.1:
 
 ```bash
 poetry env use python3.13
@@ -185,7 +189,15 @@ poetry run poe start
 `.env.example` уже содержит соответствующие адрес и порт БД.
 Для запуска Python-приложения остановите контейнер `app`, если он занимает тот же HTTP-порт.
 
-В PyCharm отметьте `.venv` как `Mark Directory As → Excluded`, а для поиска выбирайте
+Poetry может хранить окружение в общем кэше или в `.venv` проекта. После установки
+узнайте путь к его Python:
+
+```bash
+poetry env info --executable
+```
+
+В PyCharm выберите этот файл как существующий интерпретатор проекта. Если в проекте
+есть `.venv`, отметьте её как `Mark Directory As → Excluded`, а для поиска выбирайте
 область `Project Files`. Настройки IDE остаются локальными и не включаются в репозиторий.
 
 ## Проверки
@@ -203,7 +215,7 @@ poetry run pre-commit run --all-files
 docker compose --profile test run --build --rm tests
 ```
 
-Все тесты локальной `.venv` с тестовой БД в Docker:
+Все тесты в окружении Poetry с тестовой БД в Docker:
 
 ```bash
 docker compose --profile test up -d --wait postgres-test redis-test
