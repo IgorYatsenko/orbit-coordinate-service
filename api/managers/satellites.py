@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from api.db import satellites
 from api.db.errors import is_unique_violation
 from api.services.postgresql import PostgreSQL
-from models.exceptions.access import SatelliteConflict, SatelliteNotFound
+from models.exceptions.satellites import SatelliteConflict, SatelliteNotFound
 from models.pydantic.satellites import SatellitePage, SatelliteResponse, SatelliteWrite
 
 

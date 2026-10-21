@@ -76,7 +76,15 @@ class _Settings(BaseSettings):
     APP_COMPUTE_NUMERIC_THREADS: int = Field(
         default=1, ge=1, description="BLAS/OpenMP threads per calculation process."
     )
-    APP_COMPUTE_TIMEOUT_SEC: float = Field(default=60.0, gt=0, description="HTTP wait deadline for a calculation.")
+    APP_COMPUTE_TIMEOUT_SEC: float = Field(
+        default=60.0, gt=0, allow_inf_nan=False, description="HTTP wait deadline for a calculation."
+    )
+    APP_COMPUTE_STALL_TIMEOUT_SEC: float = Field(
+        default=120.0,
+        gt=0,
+        allow_inf_nan=False,
+        description="Task age that makes the pool unavailable; does not terminate processes.",
+    )
     APP_COMPUTE_START_TIMEOUT_SEC: float = Field(default=30.0, gt=0, description="Calculation pool warmup deadline.")
     APP_COMPUTE_HEALTHCHECK_TIMEOUT_SEC: float = Field(default=2.0, gt=0, description="Idle pool probe deadline.")
 
@@ -93,6 +101,12 @@ class _Settings(BaseSettings):
     def validate_password_memory(self) -> Self:
         if self.APP_AUTH_PASSWORD_MEMORY_KIB < 8 * self.APP_AUTH_PASSWORD_PARALLELISM:
             raise ValueError("Argon2 memory must be at least eight times its parallelism")
+        return self
+
+    @model_validator(mode="after")
+    def validate_calculation_deadlines(self) -> Self:
+        if self.APP_COMPUTE_STALL_TIMEOUT_SEC <= self.APP_COMPUTE_TIMEOUT_SEC:
+            raise ValueError("Calculation stall timeout must exceed the HTTP wait timeout")
         return self
 
     @property

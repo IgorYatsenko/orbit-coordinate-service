@@ -2,7 +2,7 @@
 
 Прототип микросервиса расчёта координат космических аппаратов.
 
-Версия **1.2.0** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
+Версия **1.2.1** вычисляет траекторию из TLE или CelesTrak GP JSON, возвращает
 широту, долготу и высоту WGS84 и ведёт реестр метаданных КА в PostgreSQL.
 Бизнес-операции требуют входа по логину и паролю; Redis ограничивает частоту запросов.
 
@@ -62,7 +62,7 @@ Quick start создаёт пользователя **`testuser / test-password`
 TOKEN=$(curl --fail-with-body -sS http://localhost:8000/api/v1/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"testuser","password":"test-password"}' \
-  | poetry run python -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')
+  | docker compose exec -T app python -c 'import json, sys; print(json.load(sys.stdin)["access_token"])')
 curl --fail-with-body -sS http://localhost:8000/api/v1/auth/me \
   -H "Authorization: Bearer $TOKEN"
 ```
@@ -119,6 +119,9 @@ curl --fail -sS 'https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=
 По умолчанию допускается до 200000 точек, включая двое суток с шагом 1 секунда
 (172801 точка), два одновременных вычисления на HTTP-процесс.
 При заполнении пула запрос получает `503`; время ожидания ограничено 60 секундами.
+Задача дольше 120 секунд делает пул неготовым: `/health/ready` и новые расчёты возвращают `503`.
+Приложение не прекращает её принудительно. После завершения просроченных задач доступ
+восстанавливается; если они не завершаются, требуется перезапуск приложения.
 Параметры доступны через `APP_COMPUTE_*`, подробности — в [настройках](docs/configuration.md).
 [Замеры](docs/benchmarks.md) содержат условия, команды и обоснование конфигурации.
 
@@ -154,6 +157,7 @@ curl --fail-with-body -sS 'http://localhost:8000/api/v1/satellites?limit=10' \
 | `422` | Поля или орбита не прошли проверку. Причина указана в `detail`; используйте готовые Examples. |
 | `429 rate_limit_exceeded` | Квота исчерпана. Подождите число секунд из заголовка `Retry-After`. |
 | `503 compute_busy` | Все вычислители заняты. Повторите запрос после завершения текущих расчётов. |
+| `500 internal_error` | Внутренняя ошибка работы с БД. Проверьте логи приложения; повтор запроса не гарантирует исправления. |
 | Другой `503` | Проверьте `/health/ready` и `docker compose logs --tail 50 app postgres redis`. |
 
 `docker compose stop` останавливает окружение и сохраняет реестр и демопользователя.

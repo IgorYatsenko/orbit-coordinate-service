@@ -3,12 +3,14 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from asyncpg import PostgresError
 from sqlalchemy import URL, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from api.db.errors import is_database_unavailable
 from api.services.base import BaseService
-from models.exceptions.access import DatabaseUnavailable
+from models.exceptions.infrastructure import DatabaseUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -69,11 +71,16 @@ class PostgreSQL(BaseService):
         except (OSError, TimeoutError) as exc:
             logger.warning("PostgreSQL connection failed: %s", type(exc).__name__)
             raise DatabaseUnavailable() from exc
+        except (SQLAlchemyError, PostgresError) as exc:
+            if not is_database_unavailable(exc):
+                raise
+            logger.warning("PostgreSQL operation unavailable: %s", type(exc).__name__)
+            raise DatabaseUnavailable() from exc
 
     async def ping(self) -> bool:
         try:
             async with asyncio.timeout(self._healthcheck_timeout_sec), self.session() as session:
                 return (await session.scalar(select(1))) == 1
-        except (SQLAlchemyError, OSError, TimeoutError, DatabaseUnavailable) as exc:
+        except (SQLAlchemyError, PostgresError, OSError, TimeoutError, DatabaseUnavailable) as exc:
             logger.warning("PostgreSQL healthcheck failed: %s", type(exc).__name__)
             return False

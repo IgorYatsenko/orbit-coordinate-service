@@ -7,7 +7,8 @@ from api.db import users
 from api.main import Application
 from api.services.redis import Redis
 from api.settings import _Settings
-from models.exceptions.access import RateLimitExceeded, RedisUnavailable
+from models.exceptions.auth import RateLimitExceeded
+from models.exceptions.infrastructure import RedisUnavailable
 from models.pydantic.auth import LoginRequest
 
 pytestmark = pytest.mark.integration

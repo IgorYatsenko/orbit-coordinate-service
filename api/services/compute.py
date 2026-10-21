@@ -4,6 +4,8 @@ import multiprocessing
 from collections.abc import Callable
 from concurrent.futures import Future, ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
+from time import monotonic
+from typing import cast
 
 from api.orbits.worker import CalculationWorker
 from api.services.base import BaseService
@@ -26,6 +28,7 @@ class Compute(BaseService):
         chunk_points: int,
         numeric_threads: int,
         timeout_sec: float,
+        stall_timeout_sec: float,
         start_timeout_sec: float,
         healthcheck_timeout_sec: float,
     ) -> None:
@@ -33,10 +36,12 @@ class Compute(BaseService):
         self._chunk_points = chunk_points
         self._numeric_threads = numeric_threads
         self._timeout_sec = timeout_sec
+        self._stall_timeout_sec = stall_timeout_sec
         self._start_timeout_sec = start_timeout_sec
         self._healthcheck_timeout_sec = healthcheck_timeout_sec
         self._executor: ProcessPoolExecutor | None = None
-        self._in_flight = 0
+        self._in_flight: dict[Future[object], float] = {}
+        self._stalled = False
         self._ready = False
         self._broken = False
         self._health_probe: asyncio.Future[int] | None = None
@@ -67,14 +72,25 @@ class Compute(BaseService):
         executor, self._executor = self._executor, None
         if executor is not None:
             await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
-        self._in_flight = 0
+        self._in_flight.clear()
+        self._stalled = False
+
+    def _has_stalled_tasks(self) -> bool:
+        age = monotonic() - min(self._in_flight.values()) if self._in_flight else 0.0
+        stalled = age >= self._stall_timeout_sec
+        if stalled and not self._stalled:
+            logger.error("Calculation pool stalled: oldest_task_sec=%.3f limit_sec=%s", age, self._stall_timeout_sec)
+        elif self._stalled and not stalled:
+            logger.info("Calculation pool recovered after overdue tasks completed")
+        self._stalled = stalled
+        return stalled
 
     def _submit[**P, R](
         self, count_capacity: bool, function: Callable[P, R], *args: P.args, **kwargs: P.kwargs
     ) -> asyncio.Future[R]:
         if self._executor is None or self._broken:
             raise ComputeUnavailable("Calculation pool is unavailable")
-        if count_capacity and self._in_flight >= self._workers:
+        if count_capacity and len(self._in_flight) >= self._workers:
             raise ComputeBusy("All calculation processes are occupied")
         loop = asyncio.get_running_loop()
         try:
@@ -83,21 +99,21 @@ class Compute(BaseService):
             self._broken = True
             raise ComputeUnavailable("Calculation pool is broken") from error
         # Only calculations consume request capacity; at most one shared health probe can also be queued.
+        tracked = cast(Future[object], future)
         if count_capacity:
-            self._in_flight += 1
+            self._in_flight[tracked] = monotonic()
 
         def completed(result: Future[R]) -> None:
             broken = not result.cancelled() and isinstance(result.exception(), BrokenProcessPool)
-            loop.call_soon_threadsafe(self._complete, broken, count_capacity)
+            loop.call_soon_threadsafe(self._complete, tracked, broken)
 
         future.add_done_callback(completed)
         wrapped = asyncio.wrap_future(future)
         wrapped.add_done_callback(_consume_exception)
         return wrapped
 
-    def _complete(self, broken: bool, count_capacity: bool) -> None:
-        if count_capacity:
-            self._in_flight -= 1
+    def _complete(self, future: Future[object], broken: bool) -> None:
+        self._in_flight.pop(future, None)
         if broken:
             self._broken = True
             logger.error("Calculation process exited unexpectedly; application restart is required")
@@ -105,6 +121,8 @@ class Compute(BaseService):
     async def calculate(self, request: CoordinateRequest) -> CalculationResult:
         if not self._ready:
             raise ComputeUnavailable("Calculation pool is not ready")
+        if self._has_stalled_tasks():
+            raise ComputeUnavailable("A calculation is overdue; wait for completion or restart the application")
         future = self._submit(True, CalculationWorker.execute, request)
         try:
             async with asyncio.timeout(self._timeout_sec):
@@ -117,9 +135,9 @@ class Compute(BaseService):
             raise ComputeUnavailable("Calculation process exited unexpectedly") from error
 
     async def ping(self) -> bool:
-        if not self._ready or self._broken:
+        if not self._ready or self._broken or self._has_stalled_tasks():
             return False
-        if self._health_probe is None and self._in_flight >= self._workers:
+        if self._health_probe is None and len(self._in_flight) >= self._workers:
             return True
         try:
             if self._health_probe is None:

@@ -6,7 +6,7 @@ import pytest
 
 from api.services.redis import Redis
 from api.settings import _Settings
-from models.exceptions.access import RedisUnavailable
+from models.exceptions.infrastructure import RedisUnavailable
 
 
 async def test_limiter_deadline_covers_the_whole_redis_command(monkeypatch: pytest.MonkeyPatch) -> None:

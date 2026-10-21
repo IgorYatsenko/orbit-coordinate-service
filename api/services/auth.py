@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from api.services.base import BaseService
 from api.settings import _Settings
-from models.exceptions.access import AuthenticationBusy, AuthenticationFailed
+from models.exceptions.auth import AuthenticationBusy, AuthenticationFailed
 from models.pydantic.auth import TokenClaims, TokenResponse
 
 

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 
 class SatelliteWrite(BaseModel):
@@ -16,6 +16,18 @@ class SatelliteWrite(BaseModel):
     launch_date: date | None = Field(default=None, examples=["1998-11-20"])
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+    @field_validator("name", "international_designator")
+    @classmethod
+    def validate_database_text(cls, value: str | None) -> str | None:
+        if value is not None:
+            if "\x00" in value:
+                raise ValueError("Text must not contain NUL characters")
+            try:
+                value.encode("utf-8")
+            except UnicodeEncodeError as error:
+                raise ValueError("Text must be valid UTF-8") from error
+        return value
 
 
 class SatelliteResponse(SatelliteWrite):

@@ -3,7 +3,7 @@ from api.services.auth import Auth
 from api.services.postgresql import PostgreSQL
 from api.services.redis import Redis
 from api.settings import _Settings
-from models.exceptions.access import AuthenticationFailed
+from models.exceptions.auth import AuthenticationFailed
 from models.pydantic.auth import LoginRequest, TokenResponse, UserResponse
 
 

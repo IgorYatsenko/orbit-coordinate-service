@@ -151,15 +151,18 @@ class CoordinateResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+CalculationErrorCode = Literal[
+    "invalid_orbit",
+    "propagation_failed",
+    "point_limit_exceeded",
+    "compute_busy",
+    "compute_unavailable",
+    "compute_timeout",
+]
+
+
 class CalculationErrorDetail(BaseModel):
-    code: Literal[
-        "invalid_orbit",
-        "propagation_failed",
-        "point_limit_exceeded",
-        "compute_busy",
-        "compute_unavailable",
-        "compute_timeout",
-    ]
+    code: CalculationErrorCode
     message: str
     time: datetime | None = None
 

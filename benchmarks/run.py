@@ -6,6 +6,7 @@ import platform
 import statistics
 import sys
 from collections import Counter
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from time import perf_counter
@@ -55,19 +56,21 @@ def _print_scenario(scenario: BenchmarkScenario) -> None:
         print(f"{scenario.name}: failures={dict(failures)}", flush=True)
 
 
-def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> list[BenchmarkScenario]:
+def measure_core(
+    settings: BenchmarkSettings, request: CoordinateRequest, *, scenarios: list[BenchmarkScenario]
+) -> None:
     config = get_settings()
     worker = CalculationWorker(
         chunk_points=config.APP_COMPUTE_CHUNK_POINTS, numeric_threads=config.APP_COMPUTE_NUMERIC_THREADS
     )
     worker.run(CoordinateRequest.model_validate({**request.model_dump(), "end": request.start}))
-    scenarios = []
     for name, payload in _scenarios(request, max_points=config.APP_COMPUTE_MAX_POINTS):
-        samples = []
+        scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=[])
+        scenarios.append(scenario)
         for _ in range(settings.APP_BENCH_REPETITIONS):
             started = perf_counter()
             result = worker.run(payload)
-            samples.append(
+            scenario.samples.append(
                 BenchmarkSample(
                     status=200,
                     elapsed_sec=perf_counter() - started,
@@ -76,17 +79,25 @@ def measure_core(settings: BenchmarkSettings, request: CoordinateRequest) -> lis
                     worker_peak_rss_bytes=result.peak_rss_bytes,
                 )
             )
-        scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=samples)
         _print_scenario(scenario)
-        scenarios.append(scenario)
-    return scenarios
 
 
 async def _send(client: httpx.AsyncClient, request: CoordinateRequest) -> BenchmarkSample:
     started = perf_counter()
-    response = await client.post(
-        "/api/v1/orbits/coordinates", content=request.model_dump_json(), headers={"Content-Type": "application/json"}
-    )
+    try:
+        response = await client.post(
+            "/api/v1/orbits/coordinates",
+            content=request.model_dump_json(),
+            headers={"Content-Type": "application/json"},
+        )
+    except httpx.TransportError as error:
+        return BenchmarkSample(
+            status=None,
+            elapsed_sec=perf_counter() - started,
+            compute_sec=None,
+            response_bytes=0,
+            error_code="request_timeout" if isinstance(error, httpx.TimeoutException) else "transport_error",
+        )
     elapsed = perf_counter() - started
     timing = response.headers.get("server-timing")
     compute = float(timing.partition("dur=")[2]) / 1000 if timing else None
@@ -112,9 +123,15 @@ async def _monitor_health(
 ) -> None:
     async def probe(path: str) -> None:
         started = perf_counter()
-        response = await client.get(path)
+        error_code = None
+        status = None
+        try:
+            response = await client.get(path)
+            status = response.status_code
+        except httpx.TransportError as error:
+            error_code = "request_timeout" if isinstance(error, httpx.TimeoutException) else "transport_error"
         samples.append(
-            BenchmarkHealthSample(path=path, status=response.status_code, elapsed_sec=perf_counter() - started)
+            BenchmarkHealthSample(path=path, status=status, elapsed_sec=perf_counter() - started, error_code=error_code)
         )
 
     while not stopped.is_set():
@@ -127,9 +144,12 @@ async def _monitor_health(
 
 
 async def measure_http(
-    settings: BenchmarkSettings, request: CoordinateRequest
-) -> tuple[list[BenchmarkScenario], list[BenchmarkHealthSample]]:
-    health: list[BenchmarkHealthSample] = []
+    settings: BenchmarkSettings,
+    request: CoordinateRequest,
+    *,
+    scenarios: list[BenchmarkScenario],
+    health: list[BenchmarkHealthSample],
+) -> None:
     inputs = _scenarios(request, max_points=get_settings().APP_COMPUTE_MAX_POINTS)
     async with httpx.AsyncClient(
         base_url=settings.APP_BENCH_BASE_URL, timeout=settings.APP_BENCH_TIMEOUT_SEC
@@ -148,27 +168,32 @@ async def measure_http(
         client.headers["Authorization"] = f"Bearer {token.access_token}"
         warmup = await _send(client, CoordinateRequest.model_validate({**request.model_dump(), "end": request.start}))
         if warmup.status != 200:
-            raise RuntimeError(f"Warmup failed with HTTP {warmup.status}")
+            raise RuntimeError(f"Warmup failed: {warmup.error_code or warmup.status}")
         stopped = asyncio.Event()
         monitor = asyncio.create_task(_monitor_health(client, stopped, settings.APP_BENCH_HEALTH_INTERVAL_SEC, health))
-        scenarios = []
         try:
             for name, payload in inputs:
-                samples = [await _send(client, payload) for _ in range(settings.APP_BENCH_REPETITIONS)]
-                scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=samples)
+                scenario = BenchmarkScenario(name=name, point_count=payload.point_count, samples=[])
                 scenarios.append(scenario)
+                for _ in range(settings.APP_BENCH_REPETITIONS):
+                    scenario.samples.append(await _send(client, payload))
                 _print_scenario(scenario)
             _, payload = inputs[-1]
-            burst = await asyncio.gather(*(_send(client, payload) for _ in range(settings.APP_BENCH_CONCURRENCY)))
-            scenario = BenchmarkScenario(
-                name="concurrent_max_points", point_count=payload.point_count, samples=list(burst)
-            )
+            scenario = BenchmarkScenario(name="concurrent_max_points", point_count=payload.point_count, samples=[])
             scenarios.append(scenario)
+            async with asyncio.TaskGroup() as tasks:
+
+                async def measure() -> None:
+                    scenario.samples.append(await _send(client, payload))
+
+                for _ in range(settings.APP_BENCH_CONCURRENCY):
+                    tasks.create_task(measure())
             _print_scenario(scenario)
         finally:
             stopped.set()
-            await monitor
-    return scenarios, health
+            monitor.cancel()
+            with suppress(asyncio.CancelledError):
+                await monitor
 
 
 def main() -> None:
@@ -176,11 +201,6 @@ def main() -> None:
     source = settings.APP_BENCH_INPUT.read_bytes()
     request = CoordinateRequest.model_validate_json(source)
     config = get_settings()
-    scenarios, health = (
-        (measure_core(settings, request), [])
-        if settings.APP_BENCH_MODE == "core"
-        else asyncio.run(measure_http(settings, request))
-    )
     report = BenchmarkReport(
         recorded_at=datetime.now(UTC),
         mode=settings.APP_BENCH_MODE,
@@ -195,12 +215,22 @@ def main() -> None:
             if key.startswith("APP_COMPUTE_") or key == "APP_HTTP_WORKERS"
         },
         benchmark_settings=settings,
-        scenarios=scenarios,
-        health=health,
+        scenarios=[],
+        health=[],
     )
-    settings.APP_BENCH_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    settings.APP_BENCH_OUTPUT.write_text(report.model_dump_json(indent=2) + "\n")
-    print(f"Report saved: {settings.APP_BENCH_OUTPUT}")
+    try:
+        if settings.APP_BENCH_MODE == "core":
+            measure_core(settings, request, scenarios=report.scenarios)
+        else:
+            asyncio.run(measure_http(settings, request, scenarios=report.scenarios, health=report.health))
+        report.completed = True
+    except (Exception, KeyboardInterrupt) as error:
+        report.failure = type(error).__name__
+        raise
+    finally:
+        settings.APP_BENCH_OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+        settings.APP_BENCH_OUTPUT.write_text(report.model_dump_json(indent=2) + "\n")
+        print(f"Report saved: {settings.APP_BENCH_OUTPUT}")
 
 
 if __name__ == "__main__":

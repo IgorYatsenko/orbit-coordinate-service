@@ -9,7 +9,7 @@ from sqlalchemy import select, update
 
 from api.main import Application
 from api.settings import _Settings
-from models.exceptions.access import DatabaseUnavailable
+from models.exceptions.infrastructure import DatabaseUnavailable
 from models.pydantic.auth import LoginRequest
 from models.sqlalchemy import User
 

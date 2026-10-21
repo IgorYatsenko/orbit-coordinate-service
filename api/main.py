@@ -2,17 +2,24 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from asyncpg import PostgresError
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from api import __version__
-from api.exception_handlers import access_error_handler, database_error_handler, request_validation_error_handler
+from api.exception_handlers import (
+    application_error_handler,
+    calculation_error_handler,
+    database_error_handler,
+    request_validation_error_handler,
+)
 from api.middleware import MetricsMiddleware
 from api.router import router
 from api.services import Services
 from api.settings import _Settings, get_settings
-from models.exceptions.access import AccessError
+from models.exceptions.base import ApplicationError
+from models.exceptions.orbits import CalculationError
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +42,10 @@ class Application(FastAPI):
         if self.services.metrics is not None:
             self.add_middleware(MetricsMiddleware, metrics=self.services.metrics)
         self.add_exception_handler(RequestValidationError, request_validation_error_handler)
-        self.add_exception_handler(AccessError, access_error_handler)
+        self.add_exception_handler(ApplicationError, application_error_handler)
+        self.add_exception_handler(CalculationError, calculation_error_handler)
         self.add_exception_handler(SQLAlchemyError, database_error_handler)
+        self.add_exception_handler(PostgresError, database_error_handler)
         self.include_router(router)
 
     @asynccontextmanager

@@ -1,7 +1,13 @@
 from datetime import datetime
 
+from models.exceptions.base import ApplicationError
 
-class OrbitCalculationError(Exception):
+
+class CalculationError(ApplicationError):
+    """An expected failure of the trajectory calculation operation."""
+
+
+class OrbitCalculationError(CalculationError):
     def __init__(self, message: str, time: datetime | None = None) -> None:
         self.time = time
         super().__init__(message, time)
@@ -10,13 +16,17 @@ class OrbitCalculationError(Exception):
         return str(self.args[0])
 
 
-class ComputeBusy(Exception):
+class PointLimitExceeded(CalculationError):
     pass
 
 
-class ComputeUnavailable(Exception):
+class ComputeBusy(CalculationError):
     pass
 
 
-class ComputeTimeout(Exception):
+class ComputeUnavailable(CalculationError):
+    pass
+
+
+class ComputeTimeout(CalculationError):
     pass
