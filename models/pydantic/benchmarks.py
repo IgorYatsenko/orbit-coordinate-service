@@ -18,7 +18,7 @@ class BenchmarkConfiguration(BaseModel):
     )
     APP_BENCH_REPETITIONS: int = Field(default=5, ge=1, description="Sequential repetitions per scenario.")
     APP_BENCH_CONCURRENCY: int = Field(default=4, ge=1, description="Simultaneous requests at the point limit.")
-    APP_BENCH_TIMEOUT_SEC: float = Field(default=60, gt=0, description="Client timeout per HTTP operation.")
+    APP_BENCH_TIMEOUT_SEC: float = Field(default=90, gt=0, description="Client timeout per HTTP operation.")
     APP_BENCH_HEALTH_INTERVAL_SEC: float = Field(
         default=0.05, gt=0, description="Delay between pairs of health probes."
     )
@@ -30,6 +30,7 @@ class BenchmarkSample(BaseModel):
     compute_sec: float | None
     response_bytes: int
     worker_peak_rss_bytes: int | None = None
+    error_code: str | None = None
 
 
 class BenchmarkScenario(BaseModel):

@@ -1,5 +1,5 @@
 import math
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import Mock
 
 import numpy as np
@@ -80,6 +80,41 @@ def test_wgs84_output_reconstructs_the_earth_fixed_position(omm_request: Coordin
         )
         np.testing.assert_allclose(reconstructed, expected, rtol=0, atol=1e-6)
         assert 300 < point.altitude_km < 600
+
+
+@pytest.mark.parametrize(
+    ("catalog", "time", "expected"),
+    [
+        ("00005", "2000-06-27T18:50:19.733568+00:00", (0.000387869157, 149.954879429419, 782.536928077440)),
+        ("00005", "2000-06-28T00:50:19.733568+00:00", (-23.705429777608, -81.145540031150, 2456.906224292155)),
+        ("00005", "2000-06-28T18:50:19.733568+00:00", (-34.266374746649, 61.728762002019, 1284.309485741450)),
+        ("04632", "2004-01-28T07:27:25.308576+00:00", (-10.091999716854, -84.235694739948, 26268.990923563153)),
+    ],
+)
+def test_wgs84_matches_independent_astropy_reference(
+    catalog: str, time: str, expected: tuple[float, float, float]
+) -> None:
+    # Astropy converted published Vallado TEME vectors; see fixtures/README.md.
+    orbits = {
+        "00005": TLEOrbit(
+            format="tle",
+            line1="1 00005U 58002B   00179.78495062  .00000023  00000-0  28098-4 0  4753",
+            line2="2 00005  34.2682 348.7242 1859667 331.7664  19.3264 10.82419157413667",
+        ),
+        "04632": TLEOrbit(
+            format="tle",
+            line1="1 04632U 70093B   04031.91070959 -.00000084  00000-0  10000-3 0  9955",
+            line2="2 04632  11.4628 273.1101 1450506 207.6000 143.9350  1.20231981 44145",
+        ),
+    }
+    date = datetime.fromisoformat(time)
+    request = CoordinateRequest(orbit=orbits[catalog], start=date, end=date, step_seconds=1)
+    point = OrbitCalculator(chunk_points=16).calculate(request).points[0]
+    assert point.time == date
+    # Angular tolerance includes the libraries' different Earth-orientation models.
+    assert point.latitude_deg == pytest.approx(expected[0], rel=0, abs=1e-4)
+    assert point.longitude_deg == pytest.approx(expected[1], rel=0, abs=1e-4)
+    assert point.altitude_km == pytest.approx(expected[2], rel=0, abs=1e-4)
 
 
 def test_calculation_supports_past_future_and_single_point(omm_request: CoordinateRequest) -> None:

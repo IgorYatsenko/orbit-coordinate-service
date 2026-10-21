@@ -30,7 +30,7 @@ jobs:
       - name: Verify startup and documented HTTP examples
         run: |
           docker compose up --build --wait
-          poetry run poe add-test-user
+          docker compose exec -T app python -m api.demo_user
           python - <<'PY'
           import json
           import tomllib

@@ -68,7 +68,10 @@ async def test_disabled_user_cannot_use_existing_token_or_sign_in(
     ).status_code == 401
 
 
-async def test_poe_task_creates_test_user_and_preserves_existing_record(application: Application) -> None:
+@pytest.mark.parametrize("command", [("poethepoet", "add-test-user"), ("api.demo_user",)])
+async def test_demo_entrypoints_create_test_user_and_preserve_existing_record(
+    application: Application, command: tuple[str, ...]
+) -> None:
     config = application.services.config
     environment = {
         **os.environ,
@@ -84,8 +87,7 @@ async def test_poe_task_creates_test_user_and_preserves_existing_record(applicat
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-m",
-            "poethepoet",
-            "add-test-user",
+            *command,
             cwd=PROJECT_ROOT,
             env=environment,
             stdout=asyncio.subprocess.PIPE,
