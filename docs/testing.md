@@ -75,7 +75,7 @@ API-тесты отправляют сохранённые TLE и JSON, пров
 docker compose --profile test run --build --rm tests
 ```
 
-Или pytest в локальной `.venv`:
+Или pytest в окружении Poetry:
 
 ```bash
 docker compose --profile test up -d --wait postgres-test redis-test
